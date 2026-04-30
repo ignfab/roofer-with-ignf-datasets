@@ -1,6 +1,6 @@
 # Using roofer with IGNF datasets
 
-This repository is a minimal, Docker-first example showing how to use [roofer](https://github.com/3DBAG/roofer) with IGN datasets to produce 3d buildings. This is a starting point for experimenting.
+This repository is a minimal, Docker-first example showing how to use [roofer](https://github.com/3DBAG/roofer) with IGN datasets ([BDTOPO](https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO) and [LIDAR HD](https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD)) to produce 3d buildings. This is a starting point for experimenting.
 
 `roofer` is the [3DBAG](https://3dbag.nl/en/viewer) reconstruction tool that turns building footprints and point clouds into 3D building models. The wider [3dbag-pipeline](https://github.com/3DBAG/3dbag-pipeline) project shows how these tools are used in larger production workflows. This repository focuses on a much smaller example: starting from a Lambert-93 bounding box, downloading the required IGNF data from its [Geoplateforme](https://www.ign.fr/geoplateforme), and preparing the inputs needed to run `roofer` and produce 3D buildings.
 
@@ -12,7 +12,7 @@ The workflow of this project is:
 4. Add a configurable buffer around that extent
 5. Query `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` from the [IGN WFS](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/)
 6. Build a PDAL pipeline that streams the intersecting COPC tiles
-7. Remap LiDAR classification `67 -> 6`
+7. Remap LIDAR HD classification `67 -> 6`
 8. Run `roofer` on the resulting LAZ file and building GeoPackage
 
 The goal is to keep the code and user setup as simple as possible. The host only needs [Docker](https://www.docker.com/).
@@ -173,5 +173,6 @@ Arguments:
 - Roofer input requirements: <https://innovation.3dbag.nl/roofer/data_requirements.html>
 - PDAL `readers.copc`: <https://pdal.io/en/2.8.4/stages/readers.copc.html>
 - PDAL `filters.assign`: <https://pdal.io/en/2.8.4/stages/filters.assign.html>
-- IGN LiDAR HD product page: <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD>
-- IGN services web experts - topography WFS: <https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/>
+- IGN LIDAR HD product page: <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD>
+- IGN BDTOPO product page: <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO>
+- IGN WFS service: <https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/>
