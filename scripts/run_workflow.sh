@@ -352,6 +352,7 @@ roofer \
   --polygon-source-layer "$BUILDINGS_LAYER_NAME" \
   --srs EPSG:2154 \
   --h-terrain-strategy buffer_user \
+  --id-attribute cleabs \
   "$LIDAR_SUBSET_LAZ" \
   "$BUILDINGS_GPKG" \
   "$ROOFER_OUTPUT_DIR"
