@@ -33,19 +33,6 @@ DEFAULT_OUTPUT="output"
 # Help and utility functions
 # -----------------------------------------------------------------------------
 
-usage() {
-  cat <<'EOF'
-Usage:
-  ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n]
-
-Options:
-  --bbox    Required input bounding box in EPSG:2154
-  --buffer  Optional buffer in meters, default: 10
-  --out     Optional output directory, default: ./output (cleared on each run)
-  --jobs    Optional roofer thread count, default: $(detect_default_jobs)
-  --help    Show this help message
-EOF
-}
 
 die() {
   echo "Error: $*" >&2
@@ -91,6 +78,21 @@ detect_default_jobs() {
     fi
 
     echo "$jobs"
+}
+
+
+usage() {
+  cat <<EOF
+Usage:
+  ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n]
+
+Options:
+  --bbox    Required input bounding box in EPSG:2154
+  --buffer  Optional buffer in meters, default: 10
+  --out     Optional output directory, default: ./output (cleared on each run)
+  --jobs    Optional roofer thread count, default: $(detect_default_jobs)
+  --help    Show this help message
+EOF
 }
 
 # -----------------------------------------------------------------------------
