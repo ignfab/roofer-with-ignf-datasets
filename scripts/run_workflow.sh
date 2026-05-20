@@ -346,14 +346,29 @@ mkdir -p "$ROOFER_OUTPUT_DIR"
 log "Running PDAL pipeline"
 pdal pipeline "$PDAL_PIPELINE_JSON"
 
+log "Attribute completion"
+
+POSTPROCESS_GPKG="$OUT_DIR/buildings_cleaned.gpkg"
+H_ATTRIBUTE_CONFIG="--h-terrain-strategy buffer_user --h-terrain-attribute altitude_minimale_sol --h-roof-attribute altitude_maximale_toit"
+
+bash "$SCRIPT_DIR/set_building_attributes.sh" \
+  --input "$BUILDINGS_GPKG" \
+  --output "$POSTPROCESS_GPKG" \
+  --verbose 1 \
+  --layer "$BUILDINGS_LAYER_NAME"
+
+
 log "Running roofer"
+
 roofer \
   -j "$JOBS" \
   --polygon-source-layer "$BUILDINGS_LAYER_NAME" \
   --srs EPSG:2154 \
   --h-terrain-strategy buffer_user \
   "$LIDAR_SUBSET_LAZ" \
-  "$BUILDINGS_GPKG" \
+  "$POSTPROCESS_GPKG" \
+  $H_ATTRIBUTE_CONFIG \
   "$ROOFER_OUTPUT_DIR"
+
 
 log "Workflow completed"
