@@ -370,6 +370,7 @@ roofer \
   --h-terrain-strategy buffer_user \
   --h-terrain-attribute altitude_minimale_sol \
   --h-roof-attribute altitude_maximale_toit \
+  --id-attribute cleabs \
   "$LIDAR_SUBSET_LAZ" \
   "$POSTPROCESS_GPKG" \
   "$ROOFER_OUTPUT_DIR"
