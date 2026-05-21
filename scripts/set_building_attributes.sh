@@ -13,11 +13,16 @@ Usage:
   $SCRIPT_NAME --input INPUT.gpkg --output OUTPUT.gpkg [options]
 
 Arguments:
-  --input PATH        Input GPKG file (read-only)
-  --output PATH       Output GPKG file (created/overwritten)
-  --layer NAME        Layer name (default: BUILDINGS)
-  --verbose LEVEL     Verbosity level: 0, 1, 2 (default: 1)
-  -h, --help          Show this help
+  --input PATH               Input GPKG file (read-only)
+  --output PATH              Output GPKG file (created/overwritten)
+  --layer NAME               Layer name (default: BUILDINGS)
+  --ground-min-field NAME    Ground minimum altitude field (default: altitude_minimale_sol)
+  --ground-max-field NAME    Ground maximum altitude field (default: altitude_maximale_sol)
+  --roof-min-field NAME      Roof minimum altitude field (default: altitude_minimale_toit)
+  --roof-max-field NAME      Roof maximum altitude field (default: altitude_maximale_toit)
+  --height-field NAME        Height field (default: hauteur)
+  --verbose LEVEL            Verbosity level: 0, 1, 2 (default: 1)
+  -h, --help                 Show this help
 
 Verbosity:
   0   Quiet mode
@@ -29,13 +34,23 @@ Example:
       --input buildings.gpkg \\
       --output buildings_postprocessed.gpkg \\
       --layer buildings \\
+      --ground-min-field altitude_minimale_sol \\
+      --ground-max-field altitude_maximale_sol \\
+      --roof-min-field altitude_minimale_toit \\
+      --roof-max-field altitude_maximale_toit \\
+      --height-field hauteur \\
       --verbose 2
 EOF
 }
 
 INPUT_GPKG=""
 OUTPUT_GPKG=""
-OUTPUT_LAYER_NAME="BUILDINGS"
+OUTPUT_LAYER_NAME="buildings"
+GROUND_MIN_FIELD="altitude_minimale_sol"
+GROUND_MAX_FIELD="altitude_maximale_sol"
+ROOF_MIN_FIELD="altitude_minimale_toit"
+ROOF_MAX_FIELD="altitude_maximale_toit"
+HEIGHT_FIELD="hauteur"
 VERBOSE=1
 
 log() {
@@ -106,11 +121,11 @@ debug_null_counts() {
     sqlite3 -header -column "$file" "
         SELECT
             COUNT(*) AS total,
-            SUM(CASE WHEN \"hauteur\" IS NULL THEN 1 ELSE 0 END) AS null_hauteur,
-            SUM(CASE WHEN \"altitude_minimale_sol\" IS NULL THEN 1 ELSE 0 END) AS null_altitude_minimale_sol,
-            SUM(CASE WHEN \"altitude_maximale_sol\" IS NULL THEN 1 ELSE 0 END) AS null_altitude_maximale_sol,
-            SUM(CASE WHEN \"altitude_minimale_toit\" IS NULL THEN 1 ELSE 0 END) AS null_altitude_minimale_toit,
-            SUM(CASE WHEN \"altitude_maximale_toit\" IS NULL THEN 1 ELSE 0 END) AS null_altitude_maximale_toit
+            SUM(CASE WHEN \"$HEIGHT_FIELD\" IS NULL THEN 1 ELSE 0 END) AS null_height,
+            SUM(CASE WHEN \"$GROUND_MIN_FIELD\" IS NULL THEN 1 ELSE 0 END) AS null_ground_min,
+            SUM(CASE WHEN \"$GROUND_MAX_FIELD\" IS NULL THEN 1 ELSE 0 END) AS null_ground_max,
+            SUM(CASE WHEN \"$ROOF_MIN_FIELD\" IS NULL THEN 1 ELSE 0 END) AS null_roof_min,
+            SUM(CASE WHEN \"$ROOF_MAX_FIELD\" IS NULL THEN 1 ELSE 0 END) AS null_roof_max
         FROM \"$table\";
     " 2>&1 | sed 's/^/   /' >&2 || true
 }
@@ -123,11 +138,11 @@ debug_sample_rows() {
     sqlite3 -header -column "$file" "
         SELECT
             \"fid\",
-            \"hauteur\",
-            \"altitude_minimale_sol\",
-            \"altitude_minimale_toit\",
-            \"altitude_maximale_toit\",
-            \"altitude_maximale_sol\"
+            \"$HEIGHT_FIELD\",
+            \"$GROUND_MIN_FIELD\",
+            \"$ROOF_MIN_FIELD\",
+            \"$ROOF_MAX_FIELD\",
+            \"$GROUND_MAX_FIELD\"
         FROM \"$table\"
         LIMIT 12;
     " 2>&1 | sed 's/^/   /' >&2 || true
@@ -141,17 +156,17 @@ debug_remaining_missing() {
     sqlite3 -header -column "$file" "
         SELECT
             \"fid\",
-            \"hauteur\",
-            \"altitude_minimale_sol\",
-            \"altitude_maximale_sol\",
-            \"altitude_minimale_toit\",
-            \"altitude_maximale_toit\"
+            \"$HEIGHT_FIELD\",
+            \"$GROUND_MIN_FIELD\",
+            \"$GROUND_MAX_FIELD\",
+            \"$ROOF_MIN_FIELD\",
+            \"$ROOF_MAX_FIELD\"
         FROM \"$table\"
-        WHERE \"altitude_minimale_toit\" IS NULL
-           OR \"altitude_maximale_toit\" IS NULL
-           OR \"hauteur\" IS NULL
-           OR \"altitude_minimale_sol\" IS NULL
-           OR \"altitude_maximale_sol\" IS NULL
+        WHERE \"$ROOF_MIN_FIELD\" IS NULL
+           OR \"$ROOF_MAX_FIELD\" IS NULL
+           OR \"$HEIGHT_FIELD\" IS NULL
+           OR \"$GROUND_MIN_FIELD\" IS NULL
+           OR \"$GROUND_MAX_FIELD\" IS NULL
         ORDER BY \"fid\";
     " 2>&1 | sed 's/^/   /' >&2 || true
 }
@@ -240,6 +255,31 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_LAYER_NAME="$2"
             shift 2
             ;;
+        --ground-min-field)
+            [[ $# -ge 2 ]] || die "Missing value for --ground-min-field"
+            GROUND_MIN_FIELD="$2"
+            shift 2
+            ;;
+        --ground-max-field)
+            [[ $# -ge 2 ]] || die "Missing value for --ground-max-field"
+            GROUND_MAX_FIELD="$2"
+            shift 2
+            ;;
+        --roof-min-field)
+            [[ $# -ge 2 ]] || die "Missing value for --roof-min-field"
+            ROOF_MIN_FIELD="$2"
+            shift 2
+            ;;
+        --roof-max-field)
+            [[ $# -ge 2 ]] || die "Missing value for --roof-max-field"
+            ROOF_MAX_FIELD="$2"
+            shift 2
+            ;;
+        --height-field)
+            [[ $# -ge 2 ]] || die "Missing value for --height-field"
+            HEIGHT_FIELD="$2"
+            shift 2
+            ;;
         --verbose)
             [[ $# -ge 2 ]] || die "Missing value for --verbose"
             VERBOSE="$2"
@@ -302,15 +342,15 @@ GEOM_COLUMN="$(detect_geometry_column "$OUTPUT_GPKG" "$OUTPUT_LAYER_NAME")"
 log 2 "→ Geometry column detected: ${GEOM_COLUMN:-<none>}"
 
 UPDATED_NULL_GEOM=0
-UPDATED_ALT_MAX_SOL=0
-UPDATED_ALT_MIN_SOL=0
-UPDATED_ALT_MAX_TOIT=0
-UPDATED_ALT_MIN_TOIT=0
-UPDATED_HAUTEUR=0
-UPDATED_RECON_TOIT_MAX=0
-UPDATED_RECON_TOIT_MIN=0
-UPDATED_RECON_SOL_MAX=0
-UPDATED_RECON_SOL_MIN=0
+UPDATED_GROUND_MAX=0
+UPDATED_GROUND_MIN=0
+UPDATED_ROOF_MAX=0
+UPDATED_ROOF_MIN=0
+UPDATED_HEIGHT=0
+UPDATED_RECON_ROOF_MAX=0
+UPDATED_RECON_ROOF_MIN=0
+UPDATED_RECON_GROUND_MAX=0
+UPDATED_RECON_GROUND_MIN=0
 
 STEP0_OBJECTS=0
 STEP1_OBJECTS=0
@@ -347,23 +387,23 @@ log 1 "→ Filling missing ground altitudes..."
 STEP1_OBJECTS="$(count_distinct_objects \
     "$OUTPUT_GPKG" \
     "SELECT COUNT(DISTINCT \"fid\") FROM \"$OUTPUT_LAYER_NAME\"
-     WHERE (\"altitude_maximale_sol\" IS NULL AND \"altitude_minimale_sol\" IS NOT NULL)
-        OR (\"altitude_minimale_sol\" IS NULL AND \"altitude_maximale_sol\" IS NOT NULL);"
+     WHERE (\"$GROUND_MAX_FIELD\" IS NULL AND \"$GROUND_MIN_FIELD\" IS NOT NULL)
+        OR (\"$GROUND_MIN_FIELD\" IS NULL AND \"$GROUND_MAX_FIELD\" IS NOT NULL);"
 )"
 
-if has_field altitude_maximale_sol && has_field altitude_minimale_sol; then
-    UPDATED_ALT_MAX_SOL="$(run_sql_update \
+if has_field "$GROUND_MAX_FIELD" && has_field "$GROUND_MIN_FIELD"; then
+    UPDATED_GROUND_MAX="$(run_sql_update \
         "$OUTPUT_GPKG" \
-        "altitude_maximale_sol from altitude_minimale_sol" \
-        "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"altitude_maximale_sol\" IS NULL AND \"altitude_minimale_sol\" IS NOT NULL;" \
-        "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"altitude_maximale_sol\" = \"altitude_minimale_sol\" WHERE \"altitude_maximale_sol\" IS NULL AND \"altitude_minimale_sol\" IS NOT NULL;"
+        "$GROUND_MAX_FIELD from $GROUND_MIN_FIELD" \
+        "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"$GROUND_MAX_FIELD\" IS NULL AND \"$GROUND_MIN_FIELD\" IS NOT NULL;" \
+        "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"$GROUND_MAX_FIELD\" = \"$GROUND_MIN_FIELD\" WHERE \"$GROUND_MAX_FIELD\" IS NULL AND \"$GROUND_MIN_FIELD\" IS NOT NULL;"
     )"
 
-    UPDATED_ALT_MIN_SOL="$(run_sql_update \
+    UPDATED_GROUND_MIN="$(run_sql_update \
         "$OUTPUT_GPKG" \
-        "altitude_minimale_sol from altitude_maximale_sol" \
-        "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"altitude_minimale_sol\" IS NULL AND \"altitude_maximale_sol\" IS NOT NULL;" \
-        "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"altitude_minimale_sol\" = \"altitude_maximale_sol\" WHERE \"altitude_minimale_sol\" IS NULL AND \"altitude_maximale_sol\" IS NOT NULL;"
+        "$GROUND_MIN_FIELD from $GROUND_MAX_FIELD" \
+        "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"$GROUND_MIN_FIELD\" IS NULL AND \"$GROUND_MAX_FIELD\" IS NOT NULL;" \
+        "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"$GROUND_MIN_FIELD\" = \"$GROUND_MAX_FIELD\" WHERE \"$GROUND_MIN_FIELD\" IS NULL AND \"$GROUND_MAX_FIELD\" IS NOT NULL;"
     )"
 else
     log 1 "⚠️ Missing ground altitude fields → skip"
@@ -377,23 +417,23 @@ log 1 "→ Filling missing roof altitudes..."
 STEP2_OBJECTS="$(count_distinct_objects \
     "$OUTPUT_GPKG" \
     "SELECT COUNT(DISTINCT \"fid\") FROM \"$OUTPUT_LAYER_NAME\"
-     WHERE (\"altitude_maximale_toit\" IS NULL AND \"altitude_minimale_toit\" IS NOT NULL)
-        OR (\"altitude_minimale_toit\" IS NULL AND \"altitude_maximale_toit\" IS NOT NULL);"
+     WHERE (\"$ROOF_MAX_FIELD\" IS NULL AND \"$ROOF_MIN_FIELD\" IS NOT NULL)
+        OR (\"$ROOF_MIN_FIELD\" IS NULL AND \"$ROOF_MAX_FIELD\" IS NOT NULL);"
 )"
 
-if has_field altitude_maximale_toit && has_field altitude_minimale_toit; then
-    UPDATED_ALT_MAX_TOIT="$(run_sql_update \
+if has_field "$ROOF_MAX_FIELD" && has_field "$ROOF_MIN_FIELD"; then
+    UPDATED_ROOF_MAX="$(run_sql_update \
         "$OUTPUT_GPKG" \
-        "altitude_maximale_toit from altitude_minimale_toit" \
-        "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"altitude_maximale_toit\" IS NULL AND \"altitude_minimale_toit\" IS NOT NULL;" \
-        "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"altitude_maximale_toit\" = \"altitude_minimale_toit\" WHERE \"altitude_maximale_toit\" IS NULL AND \"altitude_minimale_toit\" IS NOT NULL;"
+        "$ROOF_MAX_FIELD from $ROOF_MIN_FIELD" \
+        "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"$ROOF_MAX_FIELD\" IS NULL AND \"$ROOF_MIN_FIELD\" IS NOT NULL;" \
+        "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"$ROOF_MAX_FIELD\" = \"$ROOF_MIN_FIELD\" WHERE \"$ROOF_MAX_FIELD\" IS NULL AND \"$ROOF_MIN_FIELD\" IS NOT NULL;"
     )"
 
-    UPDATED_ALT_MIN_TOIT="$(run_sql_update \
+    UPDATED_ROOF_MIN="$(run_sql_update \
         "$OUTPUT_GPKG" \
-        "altitude_minimale_toit from altitude_maximale_toit" \
-        "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"altitude_minimale_toit\" IS NULL AND \"altitude_maximale_toit\" IS NOT NULL;" \
-        "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"altitude_minimale_toit\" = \"altitude_maximale_toit\" WHERE \"altitude_minimale_toit\" IS NULL AND \"altitude_maximale_toit\" IS NOT NULL;"
+        "$ROOF_MIN_FIELD from $ROOF_MAX_FIELD" \
+        "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"$ROOF_MIN_FIELD\" IS NULL AND \"$ROOF_MAX_FIELD\" IS NOT NULL;" \
+        "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"$ROOF_MIN_FIELD\" = \"$ROOF_MAX_FIELD\" WHERE \"$ROOF_MIN_FIELD\" IS NULL AND \"$ROOF_MAX_FIELD\" IS NOT NULL;"
     )"
 else
     log 1 "⚠️ Missing roof altitude fields → skip"
@@ -403,24 +443,24 @@ fi
 log 1 "   → Objects corrected in step 2: $STEP2_OBJECTS"
 
 # 3 - Calcul hauteur
-log 1 "→ Calculating hauteur..."
+log 1 "→ Calculating $HEIGHT_FIELD..."
 STEP3_OBJECTS="$(count_distinct_objects \
     "$OUTPUT_GPKG" \
     "SELECT COUNT(DISTINCT \"fid\") FROM \"$OUTPUT_LAYER_NAME\"
-     WHERE \"hauteur\" IS NULL
-       AND \"altitude_maximale_toit\" IS NOT NULL
-       AND \"altitude_minimale_sol\" IS NOT NULL;"
+     WHERE \"$HEIGHT_FIELD\" IS NULL
+       AND \"$ROOF_MAX_FIELD\" IS NOT NULL
+       AND \"$GROUND_MIN_FIELD\" IS NOT NULL;"
 )"
 
-if has_field hauteur && has_field altitude_maximale_toit && has_field altitude_minimale_sol; then
-    UPDATED_HAUTEUR="$(run_sql_update \
+if has_field "$HEIGHT_FIELD" && has_field "$ROOF_MAX_FIELD" && has_field "$GROUND_MIN_FIELD"; then
+    UPDATED_HEIGHT="$(run_sql_update \
         "$OUTPUT_GPKG" \
-        "hauteur from altitude_maximale_toit - altitude_minimale_sol" \
-        "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"hauteur\" IS NULL AND \"altitude_maximale_toit\" IS NOT NULL AND \"altitude_minimale_sol\" IS NOT NULL;" \
-        "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"hauteur\" = ROUND(\"altitude_maximale_toit\" - \"altitude_minimale_sol\", 3) WHERE \"hauteur\" IS NULL AND \"altitude_maximale_toit\" IS NOT NULL AND \"altitude_minimale_sol\" IS NOT NULL;"
+        "$HEIGHT_FIELD from $ROOF_MAX_FIELD - $GROUND_MIN_FIELD" \
+        "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"$HEIGHT_FIELD\" IS NULL AND \"$ROOF_MAX_FIELD\" IS NOT NULL AND \"$GROUND_MIN_FIELD\" IS NOT NULL;" \
+        "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"$HEIGHT_FIELD\" = ROUND(\"$ROOF_MAX_FIELD\" - \"$GROUND_MIN_FIELD\", 3) WHERE \"$HEIGHT_FIELD\" IS NULL AND \"$ROOF_MAX_FIELD\" IS NOT NULL AND \"$GROUND_MIN_FIELD\" IS NOT NULL;"
     )"
 else
-    log 1 "⚠️ Missing fields for hauteur computation → skip"
+    log 1 "⚠️ Missing fields for height computation → skip"
     STEP3_OBJECTS=0
 fi
 
@@ -431,29 +471,29 @@ log 1 "→ Reconstructing roof altitudes..."
 STEP4_OBJECTS="$(count_distinct_objects \
     "$OUTPUT_GPKG" \
     "SELECT COUNT(DISTINCT \"fid\") FROM \"$OUTPUT_LAYER_NAME\"
-     WHERE \"hauteur\" IS NOT NULL
+     WHERE \"$HEIGHT_FIELD\" IS NOT NULL
        AND (
-            (\"altitude_maximale_toit\" IS NULL AND \"altitude_maximale_sol\" IS NOT NULL)
-         OR (\"altitude_minimale_toit\" IS NULL AND \"altitude_minimale_sol\" IS NOT NULL)
+            (\"$ROOF_MAX_FIELD\" IS NULL AND \"$GROUND_MAX_FIELD\" IS NOT NULL)
+         OR (\"$ROOF_MIN_FIELD\" IS NULL AND \"$GROUND_MIN_FIELD\" IS NOT NULL)
        );"
 )"
 
-if has_field hauteur && has_field altitude_maximale_sol && has_field altitude_minimale_sol; then
-    if has_field altitude_maximale_toit; then
-        UPDATED_RECON_TOIT_MAX="$(run_sql_update \
+if has_field "$HEIGHT_FIELD" && has_field "$GROUND_MAX_FIELD" && has_field "$GROUND_MIN_FIELD"; then
+    if has_field "$ROOF_MAX_FIELD"; then
+        UPDATED_RECON_ROOF_MAX="$(run_sql_update \
             "$OUTPUT_GPKG" \
-            "altitude_maximale_toit from altitude_maximale_sol + hauteur" \
-            "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"altitude_maximale_toit\" IS NULL AND \"altitude_maximale_sol\" IS NOT NULL AND \"hauteur\" IS NOT NULL;" \
-            "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"altitude_maximale_toit\" = ROUND(\"altitude_maximale_sol\" + \"hauteur\", 3) WHERE \"altitude_maximale_toit\" IS NULL AND \"altitude_maximale_sol\" IS NOT NULL AND \"hauteur\" IS NOT NULL;"
+            "$ROOF_MAX_FIELD from $GROUND_MAX_FIELD + $HEIGHT_FIELD" \
+            "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"$ROOF_MAX_FIELD\" IS NULL AND \"$GROUND_MAX_FIELD\" IS NOT NULL AND \"$HEIGHT_FIELD\" IS NOT NULL;" \
+            "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"$ROOF_MAX_FIELD\" = ROUND(\"$GROUND_MAX_FIELD\" + \"$HEIGHT_FIELD\", 3) WHERE \"$ROOF_MAX_FIELD\" IS NULL AND \"$GROUND_MAX_FIELD\" IS NOT NULL AND \"$HEIGHT_FIELD\" IS NOT NULL;"
         )"
     fi
 
-    if has_field altitude_minimale_toit; then
-        UPDATED_RECON_TOIT_MIN="$(run_sql_update \
+    if has_field "$ROOF_MIN_FIELD"; then
+        UPDATED_RECON_ROOF_MIN="$(run_sql_update \
             "$OUTPUT_GPKG" \
-            "altitude_minimale_toit from altitude_minimale_sol + hauteur" \
-            "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"altitude_minimale_toit\" IS NULL AND \"altitude_minimale_sol\" IS NOT NULL AND \"hauteur\" IS NOT NULL;" \
-            "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"altitude_minimale_toit\" = ROUND(\"altitude_minimale_sol\" + \"hauteur\", 3) WHERE \"altitude_minimale_toit\" IS NULL AND \"altitude_minimale_sol\" IS NOT NULL AND \"hauteur\" IS NOT NULL;"
+            "$ROOF_MIN_FIELD from $GROUND_MIN_FIELD + $HEIGHT_FIELD" \
+            "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"$ROOF_MIN_FIELD\" IS NULL AND \"$GROUND_MIN_FIELD\" IS NOT NULL AND \"$HEIGHT_FIELD\" IS NOT NULL;" \
+            "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"$ROOF_MIN_FIELD\" = ROUND(\"$GROUND_MIN_FIELD\" + \"$HEIGHT_FIELD\", 3) WHERE \"$ROOF_MIN_FIELD\" IS NULL AND \"$GROUND_MIN_FIELD\" IS NOT NULL AND \"$HEIGHT_FIELD\" IS NOT NULL;"
         )"
     fi
 else
@@ -468,29 +508,29 @@ log 1 "→ Backfilling ground altitudes..."
 STEP5_OBJECTS="$(count_distinct_objects \
     "$OUTPUT_GPKG" \
     "SELECT COUNT(DISTINCT \"fid\") FROM \"$OUTPUT_LAYER_NAME\"
-     WHERE \"hauteur\" IS NOT NULL
+     WHERE \"$HEIGHT_FIELD\" IS NOT NULL
        AND (
-            (\"altitude_maximale_sol\" IS NULL AND \"altitude_maximale_toit\" IS NOT NULL)
-         OR (\"altitude_minimale_sol\" IS NULL AND \"altitude_minimale_toit\" IS NOT NULL)
+            (\"$GROUND_MAX_FIELD\" IS NULL AND \"$ROOF_MAX_FIELD\" IS NOT NULL)
+         OR (\"$GROUND_MIN_FIELD\" IS NULL AND \"$ROOF_MIN_FIELD\" IS NOT NULL)
        );"
 )"
 
-if has_field hauteur && has_field altitude_maximale_toit && has_field altitude_minimale_toit; then
-    if has_field altitude_maximale_sol; then
-        UPDATED_RECON_SOL_MAX="$(run_sql_update \
+if has_field "$HEIGHT_FIELD" && has_field "$ROOF_MAX_FIELD" && has_field "$ROOF_MIN_FIELD"; then
+    if has_field "$GROUND_MAX_FIELD"; then
+        UPDATED_RECON_GROUND_MAX="$(run_sql_update \
             "$OUTPUT_GPKG" \
-            "altitude_maximale_sol from altitude_maximale_toit - hauteur" \
-            "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"altitude_maximale_sol\" IS NULL AND \"altitude_maximale_toit\" IS NOT NULL AND \"hauteur\" IS NOT NULL;" \
-            "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"altitude_maximale_sol\" = ROUND(\"altitude_maximale_toit\" - \"hauteur\", 3) WHERE \"altitude_maximale_sol\" IS NULL AND \"altitude_maximale_toit\" IS NOT NULL AND \"hauteur\" IS NOT NULL;"
+            "$GROUND_MAX_FIELD from $ROOF_MAX_FIELD - $HEIGHT_FIELD" \
+            "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"$GROUND_MAX_FIELD\" IS NULL AND \"$ROOF_MAX_FIELD\" IS NOT NULL AND \"$HEIGHT_FIELD\" IS NOT NULL;" \
+            "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"$GROUND_MAX_FIELD\" = ROUND(\"$ROOF_MAX_FIELD\" - \"$HEIGHT_FIELD\", 3) WHERE \"$GROUND_MAX_FIELD\" IS NULL AND \"$ROOF_MAX_FIELD\" IS NOT NULL AND \"$HEIGHT_FIELD\" IS NOT NULL;"
         )"
     fi
 
-    if has_field altitude_minimale_sol; then
-        UPDATED_RECON_SOL_MIN="$(run_sql_update \
+    if has_field "$GROUND_MIN_FIELD"; then
+        UPDATED_RECON_GROUND_MIN="$(run_sql_update \
             "$OUTPUT_GPKG" \
-            "altitude_minimale_sol from altitude_minimale_toit - hauteur" \
-            "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"altitude_minimale_sol\" IS NULL AND \"altitude_minimale_toit\" IS NOT NULL AND \"hauteur\" IS NOT NULL;" \
-            "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"altitude_minimale_sol\" = ROUND(\"altitude_minimale_toit\" - \"hauteur\", 3) WHERE \"altitude_minimale_sol\" IS NULL AND \"altitude_minimale_toit\" IS NOT NULL AND \"hauteur\" IS NOT NULL;"
+            "$GROUND_MIN_FIELD from $ROOF_MIN_FIELD - $HEIGHT_FIELD" \
+            "SELECT COUNT(*) FROM \"$OUTPUT_LAYER_NAME\" WHERE \"$GROUND_MIN_FIELD\" IS NULL AND \"$ROOF_MIN_FIELD\" IS NOT NULL AND \"$HEIGHT_FIELD\" IS NOT NULL;" \
+            "UPDATE \"$OUTPUT_LAYER_NAME\" SET \"$GROUND_MIN_FIELD\" = ROUND(\"$ROOF_MIN_FIELD\" - \"$HEIGHT_FIELD\", 3) WHERE \"$GROUND_MIN_FIELD\" IS NULL AND \"$ROOF_MIN_FIELD\" IS NOT NULL AND \"$HEIGHT_FIELD\" IS NOT NULL;"
         )"
     fi
 else
@@ -509,11 +549,11 @@ fi
 
 for var_name in \
     UPDATED_NULL_GEOM \
-    UPDATED_ALT_MAX_SOL UPDATED_ALT_MIN_SOL \
-    UPDATED_ALT_MAX_TOIT UPDATED_ALT_MIN_TOIT \
-    UPDATED_HAUTEUR \
-    UPDATED_RECON_TOIT_MAX UPDATED_RECON_TOIT_MIN \
-    UPDATED_RECON_SOL_MAX UPDATED_RECON_SOL_MIN \
+    UPDATED_GROUND_MAX UPDATED_GROUND_MIN \
+    UPDATED_ROOF_MAX UPDATED_ROOF_MIN \
+    UPDATED_HEIGHT \
+    UPDATED_RECON_ROOF_MAX UPDATED_RECON_ROOF_MIN \
+    UPDATED_RECON_GROUND_MAX UPDATED_RECON_GROUND_MIN \
     STEP0_OBJECTS STEP1_OBJECTS STEP2_OBJECTS STEP3_OBJECTS STEP4_OBJECTS STEP5_OBJECTS
 do
     value="${!var_name:-0}"
@@ -527,21 +567,21 @@ TOTAL_OBJECTS_CORRECTED=$(( \
 
 TOTAL_ATTRIBUTE_VALUES_UPDATED=$(( \
     UPDATED_NULL_GEOM + \
-    UPDATED_ALT_MAX_SOL + UPDATED_ALT_MIN_SOL + \
-    UPDATED_ALT_MAX_TOIT + UPDATED_ALT_MIN_TOIT + \
-    UPDATED_HAUTEUR + \
-    UPDATED_RECON_TOIT_MAX + UPDATED_RECON_TOIT_MIN + \
-    UPDATED_RECON_SOL_MAX + UPDATED_RECON_SOL_MIN \
+    UPDATED_GROUND_MAX + UPDATED_GROUND_MIN + \
+    UPDATED_ROOF_MAX + UPDATED_ROOF_MIN + \
+    UPDATED_HEIGHT + \
+    UPDATED_RECON_ROOF_MAX + UPDATED_RECON_ROOF_MIN + \
+    UPDATED_RECON_GROUND_MAX + UPDATED_RECON_GROUND_MIN \
 ))
 
 BUILDINGS_WITH_MISSING_ATTRIBUTES="$(count_distinct_objects \
     "$OUTPUT_GPKG" \
     "SELECT COUNT(DISTINCT \"fid\") FROM \"$OUTPUT_LAYER_NAME\"
-     WHERE \"hauteur\" IS NULL
-        OR \"altitude_minimale_sol\" IS NULL
-        OR \"altitude_maximale_sol\" IS NULL
-        OR \"altitude_minimale_toit\" IS NULL
-        OR \"altitude_maximale_toit\" IS NULL;"
+     WHERE \"$HEIGHT_FIELD\" IS NULL
+        OR \"$GROUND_MIN_FIELD\" IS NULL
+        OR \"$GROUND_MAX_FIELD\" IS NULL
+        OR \"$ROOF_MIN_FIELD\" IS NULL
+        OR \"$ROOF_MAX_FIELD\" IS NULL;"
 )"
 
 if [[ "$VERBOSE" -ge 1 ]]; then
@@ -560,15 +600,15 @@ if [[ "$VERBOSE" -ge 1 ]]; then
     echo
     echo "Attribute values updated by field:"
     echo "   geometrie removed (NULL geometry rows)   : $UPDATED_NULL_GEOM"
-    echo "   altitude_maximale_sol                    : $UPDATED_ALT_MAX_SOL"
-    echo "   altitude_minimale_sol                    : $UPDATED_ALT_MIN_SOL"
-    echo "   altitude_maximale_toit                   : $UPDATED_ALT_MAX_TOIT"
-    echo "   altitude_minimale_toit                   : $UPDATED_ALT_MIN_TOIT"
-    echo "   hauteur                                  : $UPDATED_HAUTEUR"
-    echo "   altitude_maximale_toit (reconstructed)   : $UPDATED_RECON_TOIT_MAX"
-    echo "   altitude_minimale_toit (reconstructed)   : $UPDATED_RECON_TOIT_MIN"
-    echo "   altitude_maximale_sol (backfilled)       : $UPDATED_RECON_SOL_MAX"
-    echo "   altitude_minimale_sol (backfilled)       : $UPDATED_RECON_SOL_MIN"
+    echo "   $GROUND_MAX_FIELD                        : $UPDATED_GROUND_MAX"
+    echo "   $GROUND_MIN_FIELD                        : $UPDATED_GROUND_MIN"
+    echo "   $ROOF_MAX_FIELD                          : $UPDATED_ROOF_MAX"
+    echo "   $ROOF_MIN_FIELD                          : $UPDATED_ROOF_MIN"
+    echo "   $HEIGHT_FIELD                            : $UPDATED_HEIGHT"
+    echo "   $ROOF_MAX_FIELD (reconstructed)          : $UPDATED_RECON_ROOF_MAX"
+    echo "   $ROOF_MIN_FIELD (reconstructed)          : $UPDATED_RECON_ROOF_MIN"
+    echo "   $GROUND_MAX_FIELD (backfilled)           : $UPDATED_RECON_GROUND_MAX"
+    echo "   $GROUND_MIN_FIELD (backfilled)           : $UPDATED_RECON_GROUND_MIN"
     echo
     echo "Totals:"
     echo "   Total corrected objects (step sum)       : $TOTAL_OBJECTS_CORRECTED"
@@ -580,13 +620,13 @@ if [[ "$VERBOSE" -ge 2 ]]; then
     echo
     echo "Detailed field update summary:"
     echo "   NULL geometries removed                    : $UPDATED_NULL_GEOM"
-    echo "   altitude_maximale_sol filled              : $UPDATED_ALT_MAX_SOL"
-    echo "   altitude_minimale_sol filled              : $UPDATED_ALT_MIN_SOL"
-    echo "   altitude_maximale_toit filled             : $UPDATED_ALT_MAX_TOIT"
-    echo "   altitude_minimale_toit filled             : $UPDATED_ALT_MIN_TOIT"
-    echo "   hauteur computed                          : $UPDATED_HAUTEUR"
-    echo "   altitude_maximale_toit reconstructed      : $UPDATED_RECON_TOIT_MAX"
-    echo "   altitude_minimale_toit reconstructed      : $UPDATED_RECON_TOIT_MIN"
-    echo "   altitude_maximale_sol backfilled          : $UPDATED_RECON_SOL_MAX"
-    echo "   altitude_minimale_sol backfilled          : $UPDATED_RECON_SOL_MIN"
+    echo "   $GROUND_MAX_FIELD filled                  : $UPDATED_GROUND_MAX"
+    echo "   $GROUND_MIN_FIELD filled                  : $UPDATED_GROUND_MIN"
+    echo "   $ROOF_MAX_FIELD filled                    : $UPDATED_ROOF_MAX"
+    echo "   $ROOF_MIN_FIELD filled                    : $UPDATED_ROOF_MIN"
+    echo "   $HEIGHT_FIELD computed                    : $UPDATED_HEIGHT"
+    echo "   $ROOF_MAX_FIELD reconstructed             : $UPDATED_RECON_ROOF_MAX"
+    echo "   $ROOF_MIN_FIELD reconstructed             : $UPDATED_RECON_ROOF_MIN"
+    echo "   $GROUND_MAX_FIELD backfilled              : $UPDATED_RECON_GROUND_MAX"
+    echo "   $GROUND_MIN_FIELD backfilled              : $UPDATED_RECON_GROUND_MIN"
 fi

@@ -349,14 +349,17 @@ pdal pipeline "$PDAL_PIPELINE_JSON"
 log "Attribute completion"
 
 POSTPROCESS_GPKG="$OUT_DIR/buildings_cleaned.gpkg"
-H_ATTRIBUTE_CONFIG="--h-terrain-strategy buffer_user --h-terrain-attribute altitude_minimale_sol --h-roof-attribute altitude_maximale_toit"
 
 bash "$SCRIPT_DIR/set_building_attributes.sh" \
   --input "$BUILDINGS_GPKG" \
   --output "$POSTPROCESS_GPKG" \
-  --verbose 1 \
-  --layer "$BUILDINGS_LAYER_NAME"
-
+  --layer "$BUILDINGS_LAYER_NAME"\
+  --ground-min-field altitude_minimale_sol \
+  --ground-max-field altitude_maximale_sol \
+  --roof-min-field altitude_minimale_toit \
+  --roof-max-field altitude_maximale_toit \
+  --height-field hauteur \
+  --verbose 1
 
 log "Running roofer"
 
@@ -365,9 +368,10 @@ roofer \
   --polygon-source-layer "$BUILDINGS_LAYER_NAME" \
   --srs EPSG:2154 \
   --h-terrain-strategy buffer_user \
+  --h-terrain-attribute altitude_minimale_sol \
+  --h-roof-attribute altitude_maximale_toit \
   "$LIDAR_SUBSET_LAZ" \
   "$POSTPROCESS_GPKG" \
-  $H_ATTRIBUTE_CONFIG \
   "$ROOFER_OUTPUT_DIR"
 
 
