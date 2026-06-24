@@ -7,18 +7,18 @@ set -euo pipefail
 # =========================
 
 get_cpu_count() {
+    local cpu_count=1
 
     if command -v nproc >/dev/null 2>&1; then
-        nproc
-        return
+        cpu_count="$(nproc)"
+    elif command -v sysctl >/dev/null 2>&1; then
+        cpu_count="$(sysctl -n hw.ncpu 2>/dev/null || echo 1)"
     fi
 
-    if command -v sysctl >/dev/null 2>&1; then
-        sysctl -n hw.ncpu
-        return
-    fi
+    [[ "$cpu_count" =~ ^[0-9]+$ ]] || cpu_count=1
+    (( cpu_count < 1 )) && cpu_count=1
 
-    echo 1
+    echo "$cpu_count"
 }
 
 # -----------------------------------------------------------------------------
@@ -59,25 +59,9 @@ validate_bbox() {
 }
 
 detect_default_jobs() {
-
     local cpu_count
-    local jobs
-
-    if command -v nproc >/dev/null 2>&1; then
-        cpu_count="$(nproc)"
-    elif command -v sysctl >/dev/null 2>&1; then
-        cpu_count="$(sysctl -n hw.ncpu)"
-    else
-        cpu_count=1
-    fi
-
-    jobs=$((cpu_count - 1))
-
-    if (( jobs < 0 )); then
-        jobs=0
-    fi
-
-    echo "$jobs"
+    cpu_count="$(get_cpu_count)"
+    echo $((cpu_count - 1))
 }
 
 
