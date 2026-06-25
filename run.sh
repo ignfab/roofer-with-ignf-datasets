@@ -2,6 +2,25 @@
 
 set -euo pipefail
 
+# =========================
+# CPU / THREAD HELPERS
+# =========================
+
+get_cpu_count() {
+    local cpu_count=1
+
+    if command -v nproc >/dev/null 2>&1; then
+        cpu_count="$(nproc)"
+    elif command -v sysctl >/dev/null 2>&1; then
+        cpu_count="$(sysctl -n hw.ncpu 2>/dev/null || echo 1)"
+    fi
+
+    [[ "$cpu_count" =~ ^[0-9]+$ ]] || cpu_count=1
+    (( cpu_count < 1 )) && cpu_count=1
+
+    echo "$cpu_count"
+}
+
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
@@ -14,19 +33,6 @@ DEFAULT_OUTPUT="output"
 # Help and utility functions
 # -----------------------------------------------------------------------------
 
-usage() {
-  cat <<'EOF'
-Usage:
-  ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n]
-
-Options:
-  --bbox    Required input bounding box in EPSG:2154
-  --buffer  Optional buffer in meters, default: 10
-  --out     Optional output directory, default: ./output (cleared on each run)
-  --jobs    Optional roofer thread count, default: nproc - 1 (min 0)
-  --help    Show this help message
-EOF
-}
 
 die() {
   echo "Error: $*" >&2
@@ -53,14 +59,24 @@ validate_bbox() {
 }
 
 detect_default_jobs() {
-  local cpu_count
-
-  cpu_count="$(nproc)"
-  if (( cpu_count > 0 )); then
+    local cpu_count
+    cpu_count="$(get_cpu_count)"
     echo $((cpu_count - 1))
-  else
-    echo 0
-  fi
+}
+
+
+usage() {
+  cat <<EOF
+Usage:
+  ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n]
+
+Options:
+  --bbox    Required input bounding box in EPSG:2154
+  --buffer  Optional buffer in meters, default: 10
+  --out     Optional output directory, default: ./output (cleared on each run)
+  --jobs    Optional roofer thread count, default: $(detect_default_jobs)
+  --help    Show this help message
+EOF
 }
 
 # -----------------------------------------------------------------------------

@@ -103,6 +103,19 @@ Host-side entrypoint that:
 - passes proxy-related environment variables to Docker
 - launches the container workflow
 
+CLI:
+
+```text
+./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n]
+```
+
+Arguments:
+
+- `--bbox xmin ymin xmax ymax` required, input extent in `EPSG:2154`
+- `--buffer` optional, defaults to `10` meters
+- `--out` optional, defaults to `./output`; its contents are cleared on each run
+- `--jobs` optional, forwarded to `roofer -j`, defaults to `nproc - 1` with a minimum of `0`
+
 ### `scripts/run_workflow.sh`
 
 Container-side workflow that:
@@ -117,6 +130,54 @@ Container-side workflow that:
 - generates `pdal_pipeline.json` to extract the necessary piece of building for reconstruction
 - runs `pdal pipeline`
 - runs `roofer`
+
+### `scripts/set_building_attributes.sh`
+
+Post-processes a building GeoPackage to clean and complete the attributes required by `roofer` as fallback altitudes if the LAZ doesn't fully cover the building.
+
+The script:
+
+- removes features with NULL geometries
+- fills missing minimum ground elevation from maximum ground elevation
+- fills missing maximum ground elevation from minimum ground elevation
+- fills missing minimum roof elevation from maximum roof elevation
+- fills missing maximum roof elevation from minimum roof elevation
+- computes missing building height using:
+  `maximum roof elevation - minimum ground elevation`
+- reconstructs missing roof elevations using:
+  `ground elevation + building height`
+- reconstructs missing ground elevations using:
+  `roof elevation - building height`
+
+CLI:
+
+```text
+bash scripts/set_building_attributes.sh \
+  --input buildings.gpkg \
+  --output buildings_cleaned.gpkg \
+  --layer buildings \
+  --ground-min-field altitude_minimale_sol \
+  --ground-max-field altitude_maximale_sol \
+  --roof-min-field altitude_minimale_toit \
+  --roof-max-field altitude_maximale_toit \
+  --height-field hauteur \
+  --verbose 1
+```
+
+Arguments:
+
+- `--input`: input building GeoPackage (read-only)
+- `--output`: output GeoPackage created by the script
+- `--layer`: building layer name inside the GeoPackage (default: `buildings`)
+- `--ground-min-field`: field name for `minimal ground altitude`  (default: `altitude_minimale_sol`)
+- `--ground-max-field`: field name for `maximal ground altitude`  (default: `altitude_maximale_sol`)
+- `--roof-min-field`: field name for `minimal roof altitude`  (default: `altitude_minimale_toit`)
+- `--roof-max-field`: field name for `maximal roof altitude`  (default: `altitude_maximale_toit`)
+- `--height-field`: field name for `building height`  (default: `hauteur`)
+- `--verbose`: verbosity level:
+    - `0`: quiet mode
+    - `1`: main processing steps and summary
+    - `2`: detailed SQL diagnostics and per-step statistics
 
 ### `scripts/build_pdal_pipeline.py`
 
@@ -143,18 +204,6 @@ Arguments:
 - `--output-pipeline`: path of the generated `pdal_pipeline.json`
 - `--laz-output`: path of the cropped LAZ file written by the generated PDAL pipeline
 
-## CLI
-
-```text
-./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n]
-```
-
-Arguments:
-
-- `--bbox xmin ymin xmax ymax` required, input extent in `EPSG:2154`
-- `--buffer` optional, defaults to `10` meters
-- `--out` optional, defaults to `./output`; its contents are cleared on each run
-- `--jobs` optional, forwarded to `roofer -j`, defaults to `nproc - 1` with a minimum of `0`
 
 ## Notes
 
