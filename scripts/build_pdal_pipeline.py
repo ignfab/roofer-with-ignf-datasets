@@ -23,6 +23,11 @@ def parse_args() -> argparse.Namespace:
         help="Path to the local LiDAR tile footprint dataset, typically the generated GeoPackage.",
     )
     parser.add_argument(
+        "--layer",
+        required=True,
+        help="Name of the LiDAR tile footprint layer to read from the dataset.",
+    )
+    parser.add_argument(
         "--bbox",
         required=True,
         nargs=4,
@@ -42,8 +47,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_ogrinfo(dataset: str) -> dict:
-    command = ["ogrinfo", "-ro", "-al", "-geom=NO", "-q", "-json", "-features", dataset]
+def run_ogrinfo(dataset: str, layer: str) -> dict:
+    command = ["ogrinfo", "-ro", "-geom=NO", "-q", "-json", "-features", dataset, layer]
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=False)
     except OSError as exc:
@@ -59,20 +64,12 @@ def run_ogrinfo(dataset: str) -> dict:
 
 
 def extract_features(data: Dict[str, Any]) -> List[Dict[str, Any]]:
-    root_features = data.get("features")
-    if isinstance(root_features, list) and root_features:
-        return root_features
-
     layers = data.get("layers")
-    if isinstance(layers, list):
-        for layer in layers:
-            if not isinstance(layer, dict):
-                continue
+    if not (isinstance(layers, list) and layers and isinstance(layers[0], dict)):
+        return []
 
-            features = layer.get("features")
-            if isinstance(features, list) and features:
-                return features
-    return []
+    features = layers[0].get("features")
+    return features if isinstance(features, list) else []
 
 
 def ends_with_copc_laz(value: object) -> bool:
@@ -170,10 +167,10 @@ def build_pipeline(urls: List[str], bounds: str, laz_output: str) -> List[Dict[s
 def main() -> int:
     args = parse_args()
 
-    data = run_ogrinfo(args.tiles)
+    data = run_ogrinfo(args.tiles, args.layer)
     features = extract_features(data)
     if not features:
-        raise RuntimeError("no LiDAR tile features found in local dataset")
+        raise RuntimeError(f"no LiDAR tile features found in layer '{args.layer}'")
 
     urls = collect_copc_urls(features)
     bounds = build_bounds_string(args.bbox)

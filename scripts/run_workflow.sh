@@ -314,6 +314,7 @@ build_pdal_pipeline() {
   log "Resolving COPC URLs and writing PDAL pipeline"
   python3 "$SCRIPT_DIR/build_pdal_pipeline.py" \
     --tiles "$LIDAR_TILES_GPKG" \
+    --layer "$LIDAR_LAYER_NAME" \
     --bbox "$BUFFERED_XMIN" "$BUFFERED_YMIN" "$BUFFERED_XMAX" "$BUFFERED_YMAX" \
     --output-pipeline "$PDAL_PIPELINE_JSON" \
     --laz-output "$LIDAR_SUBSET_LAZ"
