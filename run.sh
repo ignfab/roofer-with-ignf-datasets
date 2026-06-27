@@ -8,6 +8,7 @@ set -euo pipefail
 
 IMAGE="${RUNNER_IMAGE:-3dgi/3dbag-pipeline-tools:2026.06.24}"
 DEFAULT_BUFFER="10"
+MAX_BUFFER="500"
 DEFAULT_OUTPUT="output"
 DEFAULT_RUN_PREFIX="run"
 RUN_MARKER=".roofer-run-output"
@@ -174,7 +175,7 @@ Usage:
 
 Options:
   --bbox    Required input bounding box in EPSG:2154
-  --buffer  Optional buffer in meters, must be >= 0, default: 10
+  --buffer  Optional buffer in meters, 0 to ${MAX_BUFFER}, default: ${DEFAULT_BUFFER}
   --out     Optional output root directory, default: ./output
             Each run writes to a timestamped subdirectory (${DEFAULT_RUN_PREFIX}-YYYYMMDD-HHMMSS)
   --jobs    Optional roofer thread count, default: $(detect_default_jobs)
@@ -256,6 +257,8 @@ validate_args() {
   done
 
   is_non_negative_number "${BUFFER}" || die "--buffer must be greater than or equal to 0"
+  awk -v b="${BUFFER}" -v m="${MAX_BUFFER}" 'BEGIN { exit !(b <= m) }' \
+    || die "--buffer must not exceed ${MAX_BUFFER} meters"
 
   validate_bbox "${BBOX[0]}" "${BBOX[1]}" "${BBOX[2]}" "${BBOX[3]}"
 
