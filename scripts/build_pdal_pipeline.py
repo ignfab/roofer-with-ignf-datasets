@@ -10,8 +10,45 @@ from typing import Any, Dict, List
 COPC_URL_FIELD = "url"
 
 
-def run_ogrinfo(dataset: str) -> dict:
-    command = ["ogrinfo", "-ro", "-al", "-geom=NO", "-q", "-json", "-features", dataset]
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Build a PDAL pipeline from a local LiDAR tile footprint dataset by reading "
+            "COPC URLs from the schema-defined 'url' property."
+        )
+    )
+    parser.add_argument(
+        "--tiles",
+        required=True,
+        help="Path to the local LiDAR tile footprint dataset, typically the generated GeoPackage.",
+    )
+    parser.add_argument(
+        "--layer",
+        required=True,
+        help="Name of the LiDAR tile footprint layer to read from the dataset.",
+    )
+    parser.add_argument(
+        "--bbox",
+        required=True,
+        nargs=4,
+        metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
+        help="Buffered extraction bounding box in EPSG:2154, forwarded to each PDAL readers.copc stage.",
+    )
+    parser.add_argument(
+        "--output-pipeline",
+        required=True,
+        help="Path where the generated PDAL pipeline JSON will be written.",
+    )
+    parser.add_argument(
+        "--laz-output",
+        required=True,
+        help="Path to the cropped LAZ file that the generated PDAL pipeline will write.",
+    )
+    return parser.parse_args()
+
+
+def run_ogrinfo(dataset: str, layer: str) -> dict:
+    command = ["ogrinfo", "-ro", "-geom=NO", "-q", "-json", "-features", dataset, layer]
     try:
         result = subprocess.run(command, capture_output=True, text=True, check=False)
     except OSError as exc:
@@ -27,21 +64,12 @@ def run_ogrinfo(dataset: str) -> dict:
 
 
 def extract_features(data: Dict[str, Any]) -> List[Dict[str, Any]]:
-    root_features = data.get("features")
-    if isinstance(root_features, list) and root_features:
-        return root_features
-
     layers = data.get("layers")
-    if isinstance(layers, list):
-        for layer in layers:
-            if not isinstance(layer, dict):
-                continue
+    if not (isinstance(layers, list) and layers and isinstance(layers[0], dict)):
+        return []
 
-            features = layer.get("features")
-            if isinstance(features, list) and features:
-                return features
-
-    return []
+    features = layers[0].get("features")
+    return features if isinstance(features, list) else []
 
 
 def ends_with_copc_laz(value: object) -> bool:
@@ -68,15 +96,29 @@ def format_tile_identifier(properties: Dict[str, Any]) -> str:
 def collect_copc_urls(features: List[Dict[str, Any]]) -> List[str]:
     ordered_urls: List[str] = []
     tile_identifiers: List[str] = []
+    skipped_identifiers: List[str] = []
     seen = set()
 
     for feature in features:
         properties = feature.get("properties") or {}
-        tile_identifiers.append(format_tile_identifier(properties))
+        identifier = format_tile_identifier(properties)
+        tile_identifiers.append(identifier)
         value = properties.get(COPC_URL_FIELD)
-        if ends_with_copc_laz(value) and value not in seen:
+        if not ends_with_copc_laz(value):
+            skipped_identifiers.append(identifier)
+            continue
+        if value not in seen:
             seen.add(value)
             ordered_urls.append(value)
+
+    if skipped_identifiers:
+        identifiers = ", ".join(skipped_identifiers)
+        print(
+            f"Warning: skipped {len(skipped_identifiers)} LiDAR tile(s) without a usable "
+            f"'{COPC_URL_FIELD}' COPC URL; LiDAR coverage may be incomplete. "
+            f"Tiles skipped: {identifiers}",
+            file=sys.stderr,
+        )
 
     if not ordered_urls:
         identifiers = ", ".join(tile_identifiers[:10])
@@ -122,45 +164,13 @@ def build_pipeline(urls: List[str], bounds: str, laz_output: str) -> List[Dict[s
     return stages
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Build a PDAL pipeline from a local LiDAR tile footprint dataset by reading "
-            "COPC URLs from the schema-defined 'url' property."
-        )
-    )
-    parser.add_argument(
-        "--tiles",
-        required=True,
-        help="Path to the local LiDAR tile footprint dataset, typically the generated GeoPackage.",
-    )
-    parser.add_argument(
-        "--bbox",
-        required=True,
-        nargs=4,
-        metavar=("XMIN", "YMIN", "XMAX", "YMAX"),
-        help="Buffered extraction bounding box in EPSG:2154, forwarded to each PDAL readers.copc stage.",
-    )
-    parser.add_argument(
-        "--output-pipeline",
-        required=True,
-        help="Path where the generated PDAL pipeline JSON will be written.",
-    )
-    parser.add_argument(
-        "--laz-output",
-        required=True,
-        help="Path to the cropped LAZ file that the generated PDAL pipeline will write.",
-    )
-    return parser.parse_args()
-
-
 def main() -> int:
     args = parse_args()
 
-    data = run_ogrinfo(args.tiles)
+    data = run_ogrinfo(args.tiles, args.layer)
     features = extract_features(data)
     if not features:
-        raise RuntimeError("no LiDAR tile features found in local dataset")
+        raise RuntimeError(f"no LiDAR tile features found in layer '{args.layer}'")
 
     urls = collect_copc_urls(features)
     bounds = build_bounds_string(args.bbox)
