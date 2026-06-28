@@ -17,8 +17,7 @@ Le déroulé de ce projet est le suivant :
 7. Remapper la classification LIDAR HD `67 -> 6`, car `roofer` suit le standard ASPRS LAS et ne considère que la classe `6` comme *bâtiment*, alors que le LIDAR HD de l'IGN place aussi des points de bâtiment dans sa classe non standard `67` (*Divers - bâtis*, c'est-à-dire les structures bâties diverses) ; sans ce remappage, ces points seraient invisibles pour `roofer` et perdus pour la reconstruction des toits
 8. Nettoyer et compléter les attributs d'altitude du sol et du toit des bâtiments, sur lesquels `roofer` se rabat lorsqu'une emprise a trop peu de points sol (pour l'altitude du plancher) ou de points toit (pour la hauteur du toit)
 9. Exécuter `roofer` sur le fichier LAZ obtenu et le GeoPackage des bâtiments nettoyé
-
-
+<br/>
 <p align="center">
   <a href="docs/imgs/workflow.png" target="_blank"><img src="docs/imgs/workflow.png" alt="Workflow"></a>
 </p>

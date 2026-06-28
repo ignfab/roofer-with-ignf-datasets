@@ -17,8 +17,7 @@ The workflow of this project is:
 7. Remap LIDAR HD classification `67 -> 6`, because `roofer` follows the ASPRS LAS standard and only treats class `6` as *building*, whereas IGN LIDAR HD also places building points in its non-standard class `67` (*DIvers - bâtis*, i.e. miscellaneous built structures); without this remap those points would be invisible to `roofer` and lost for roof reconstruction
 8. Clean and complete the building ground and roof elevation attributes, which `roofer` falls back on when a footprint has too few ground points (for the floor elevation) or roof points (for the roof height)
 9. Run `roofer` on the resulting LAZ file and the cleaned building GeoPackage
-
-
+<br/>
 <p align="center">
   <a href="docs/imgs/workflow.png" target="_blank"><img src="docs/imgs/workflow.png" alt="Workflow"></a>
 </p>
