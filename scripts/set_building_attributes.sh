@@ -98,12 +98,12 @@ summary_row() {
 
 table_exists_in_file() {
     local file="$1" table="$2"
-    sqlite3 "$file" "SELECT name FROM sqlite_master WHERE type='table' AND name='$table';" 2>/dev/null | grep -qx "$table"
+    [[ -n "$(sqlite3 "$file" "SELECT name FROM sqlite_master WHERE type='table' AND name='$table';" 2>/dev/null)" ]]
 }
 
 get_fields() {
     local file="$1" table="$2"
-    sqlite3 -init /dev/null "$file" "SELECT name FROM pragma_table_info('$table');" 2>/dev/null || true
+    sqlite3 "$file" "SELECT name FROM pragma_table_info('$table');" 2>/dev/null || true
 }
 
 has_field() {
