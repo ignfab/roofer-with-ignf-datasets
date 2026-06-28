@@ -20,7 +20,7 @@ The workflow of this project is:
 
 
 <p align="center">
-  <a href="docs/imgs/workflow.png" target="_blank"><img src="docs/imgs/workflow.png" alt="Workflow" width="700"></a>
+  <a href="docs/imgs/workflow.png" target="_blank"><img src="docs/imgs/workflow.png" alt="Workflow"></a>
 </p>
 
 The goal is to keep the code and user setup as simple as possible. The host only needs [Docker](https://www.docker.com/).

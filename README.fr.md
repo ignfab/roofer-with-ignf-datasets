@@ -20,7 +20,7 @@ Le déroulé de ce projet est le suivant :
 
 
 <p align="center">
-  <a href="docs/imgs/workflow.png" target="_blank"><img src="docs/imgs/workflow.png" alt="Déroulé du traitement" width="700"></a>
+  <a href="docs/imgs/workflow.png" target="_blank"><img src="docs/imgs/workflow.png" alt="Workflow"></a>
 </p>
 
 L'objectif est de garder le code et la configuration utilisateur aussi simples que possible. La machine hôte n'a besoin que de [Docker](https://www.docker.com/).
