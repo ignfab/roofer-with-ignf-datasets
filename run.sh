@@ -6,7 +6,7 @@ set -euo pipefail
 # Configuration
 # -----------------------------------------------------------------------------
 
-IMAGE="${RUNNER_IMAGE:-3dgi/3dbag-pipeline-tools:2026.06.24}"
+IMAGE="${RUNNER_IMAGE:-3dgi/3dbag-pipeline-tools:2026.07.29}"
 DEFAULT_BUFFER="10"
 MAX_BUFFER="500"
 DEFAULT_OUTPUT="output"
@@ -157,11 +157,7 @@ get_cpu_count() {
 detect_default_jobs() {
   local cpu_count
   cpu_count="$(get_cpu_count)"
-  if (( cpu_count > 1 )); then
-    echo $((cpu_count - 1))
-  else
-    echo 1
-  fi
+  echo "${cpu_count}"
 }
 
 generate_run_name() {
@@ -172,14 +168,16 @@ usage() {
   cat <<EOF
 Usage:
   ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean]
+  ./run.sh --clean [--out path]
 
 Options:
-  --bbox    Required input bounding box in EPSG:2154
+  --bbox    Input bounding box in EPSG:2154, required when running the workflow
   --buffer  Optional buffer in meters, 0 to ${MAX_BUFFER}, default: ${DEFAULT_BUFFER}
   --out     Optional output root directory, default: ./output
             Each run writes to a timestamped subdirectory (${DEFAULT_RUN_PREFIX}-YYYYMMDD-HHMMSS)
-  --jobs    Optional roofer thread count, default: $(detect_default_jobs)
-  --clean   Clear previous run directories under --out before running
+  --jobs    Optional roofer job count, default: $(detect_default_jobs)
+  --clean   Clear marked run directories under --out
+            Without --bbox, clean and exit. With --bbox, clean before running
   --help    Show this help message
 EOF
 }
@@ -247,27 +245,51 @@ parse_args() {
   done
 }
 
+clean_only_requested() {
+  (( CLEAN_OUTPUT && ${#BBOX[@]} == 0 ))
+}
+
 validate_args() {
   local value=""
 
-  [[ ${#BBOX[@]} -eq 4 ]] || die "--bbox is required"
+  if [[ ${#BBOX[@]} -eq 0 ]] && (( ! CLEAN_OUTPUT )); then
+    die "--bbox is required"
+  fi
 
   for value in "${BBOX[@]}" "${BUFFER}"; do
     is_number "${value}" || die "non-numeric value detected: ${value}"
   done
 
   is_non_negative_number "${BUFFER}" || die "--buffer must be greater than or equal to 0"
+
   awk -v b="${BUFFER}" -v m="${MAX_BUFFER}" 'BEGIN { exit !(b <= m) }' \
     || die "--buffer must not exceed ${MAX_BUFFER} meters"
 
-  validate_bbox "${BBOX[0]}" "${BBOX[1]}" "${BBOX[2]}" "${BBOX[3]}"
-
   [[ "${JOBS}" =~ ^[1-9][0-9]*$ ]] || die "--jobs must be an integer > 0"
+
+  clean_only_requested && return
+
+  [[ ${#BBOX[@]} -eq 4 ]] || die "--bbox requires four numeric values"
+
+  validate_bbox "${BBOX[@]}"
 }
 
 resolve_output_dir() {
   [[ -n "${OUT_ARG}" ]] || die "--out requires a non-empty path"
   [[ "${OUT_ARG}" = /* ]] || OUT_ARG="${PWD}/${OUT_ARG}"
+}
+
+clean_output_only() {
+  if [[ ! -e "${OUT_ARG}" ]]; then
+    echo "Nothing to clean under ${OUT_ARG}"
+    return
+  fi
+
+  [[ -d "${OUT_ARG}" ]] || die "--out must point to a directory"
+  OUT_ROOT="$(cd "${OUT_ARG}" && pwd -P)"
+  ensure_safe_output_dir "${OUT_ROOT}"
+  clean_marked_run_dirs "${OUT_ROOT}"
+  echo "Cleaned marked run directories under ${OUT_ROOT}"
 }
 
 prepare_output_dir() {
@@ -357,6 +379,10 @@ main() {
   parse_args "$@"
   validate_args
   resolve_output_dir
+  if clean_only_requested; then
+    clean_output_only
+    return
+  fi
   prepare_environment
   build_docker_args
   run_workflow

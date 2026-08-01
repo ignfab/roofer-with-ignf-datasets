@@ -39,7 +39,7 @@ Verbosity:
 Example:
   $SCRIPT_NAME \\
       --input buildings.gpkg \\
-      --output buildings_postprocessed.gpkg \\
+      --output buildings_prepared.gpkg \\
       --layer buildings \\
       --ground-min-field altitude_minimale_sol \\
       --ground-max-field altitude_maximale_sol \\

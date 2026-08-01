@@ -11,12 +11,12 @@ The workflow of this project is:
 1. Start from a bounding box in Lambert-93 (`EPSG:2154`)
 2. Download `BDTOPO_V3:batiment` buildings from the [IGN WFS](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) with pagination support
 3. Compute the real extent of the downloaded buildings
-4. Add a configurable buffer around that extent
-5. Query `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` from the [IGN WFS](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) with pagination support
-6. Build a PDAL pipeline that streams exactly the LiDAR covering the buffered extent, cropped from the intersecting COPC tiles
+4. Define the LiDAR extraction bbox by adding a configurable buffer around that extent
+5. Query the `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` tile index from the [IGN WFS](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) with pagination support
+6. Build a PDAL pipeline that streams exactly the LiDAR covering the extraction bbox, cropped from the intersecting COPC tiles
 7. Remap LIDAR HD classification `67 -> 6`, because `roofer` follows the ASPRS LAS standard and only treats class `6` as *building*, whereas IGN LIDAR HD also places building points in its non-standard class `67` (*DIvers - bâtis*, i.e. miscellaneous built structures); without this remap those points would be invisible to `roofer` and lost for roof reconstruction
 8. Clean and complete the building ground and roof elevation attributes, which `roofer` falls back on when a footprint has too few ground points (for the floor elevation) or roof points (for the roof height)
-9. Run `roofer` on the resulting LAZ file and the cleaned building GeoPackage
+9. Run `roofer` on the resulting LAZ file and the prepared building GeoPackage
 <br/>
 <p align="center">
   <a href="docs/imgs/workflow.png" target="_blank"><img src="docs/imgs/workflow.png" alt="Workflow"></a>
@@ -39,7 +39,7 @@ The goal is to keep the code and user setup as simple as possible. The host only
 - Network access to:
   - `https://data.geopf.fr`
   - the COPC storage URLs returned by the LiDAR tiles WFS
-  - Docker Hub to pull `3dgi/3dbag-pipeline-tools:2026.06.24`
+  - Docker Hub to pull `3dgi/3dbag-pipeline-tools:2026.07.29`
 
 ## Quick start
 
@@ -93,12 +93,12 @@ The workflow writes all intermediate artifacts in a dedicated run directory unde
 Expected files inside each run directory:
 
 - `buildings.gpkg`: building footprints downloaded from `BDTOPO_V3:batiment` in `EPSG:2154` and normalized to `MULTIPOLYGON`
-- `building_bbox.json`: the real building extent computed from the downloaded building layer
-- `buffered_bbox.json`: the building extent after applying the user-defined buffer
-- `lidar_tiles.gpkg`: LiDAR tile features returned by `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` for the buffered bbox
+- `buildings_extent.json`: the real building extent computed from the downloaded building layer
+- `lidar_extraction_bbox.json`: the buffered building extent used to query and crop the LiDAR data
+- `lidar_tile_index.gpkg`: the local LiDAR tile index containing the footprints, identifiers, names, and COPC URLs returned by `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
 - `pdal_pipeline.json`: the generated PDAL pipeline
-- `lidar_subset.laz`: the cropped LiDAR subset written by PDAL for the buffered bbox, with class `67` remapped to `6`
-- `buildings_cleaned.gpkg`: building footprints after attribute cleaning and completion, used as the polygon source for `roofer`
+- `lidar_subset.laz`: the cropped LiDAR subset written by PDAL for the LiDAR extraction bbox, with class `67` remapped to `6`
+- `buildings_prepared.gpkg`: building footprints after attribute cleaning and completion, used as the polygon source for `roofer`
 - `roofer_output/`: the final [CityJSONSeq](https://www.cityjson.org/cityjsonseq/) output produced by `roofer`
 - `.roofer-run-output`: marker used by `run.sh` to identify run directories it is allowed to clean with `--clean`
 
@@ -120,36 +120,38 @@ CLI:
 
 ```text
 ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean]
+./run.sh --clean [--out path]
 ```
 
 Arguments:
 
-- `--bbox xmin ymin xmax ymax` required, input extent in `EPSG:2154`
+- `--bbox xmin ymin xmax ymax` input extent in `EPSG:2154`, required when running the workflow
 - `--buffer` optional, between `0` and `500` meters, defaults to `10` meters
 - `--out` optional, defaults to `./output`; this is the output root that contains run directories
-- `--jobs` optional, forwarded to `roofer -j`, defaults to `nproc - 1` with a minimum of `1`
-- `--clean` optional, clears marked run directories under `--out`
+- `--jobs` optional, forwarded to `roofer -j`, defaults to `nproc`. For values greater than `1`, roofer reserves one job for the pipeline and uses the others for the reconstructor pool
+- `--clean` optional, clears marked run directories under `--out`. Without `--bbox`, it cleans and exits, while with `--bbox` it cleans before running
 
 ### `scripts/run_workflow.sh`
 
 Container-side workflow that:
 
 - checks that `ogr2ogr`, `ogrinfo`, `pdal`, `roofer`, `python3`, `awk`, and `sed` are present in the runtime image
-- downloads buildings from `BDTOPO_V3:batiment`
+- downloads building footprints from `BDTOPO_V3:batiment`
 - computes the real building extent
-- buffers that extent
-- downloads LiDAR tiles footprints from `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
+- prepares the LiDAR extraction bbox by buffering that extent
+- downloads the LiDAR tile index from `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
 - reads COPC URLs from the tile `url` attribute
-- generates `pdal_pipeline.json` to extract the necessary piece of building for reconstruction
-- runs `pdal pipeline`
-- cleans and completes the building attributes with `set_building_attributes.sh` (requires `sqlite3`)
+- generates `pdal_pipeline.json` to extract the required LiDAR subset
+- extracts the LiDAR subset with `pdal pipeline`
+- prepares the building footprints with `set_building_attributes.sh` (requires `sqlite3`)
 - runs `roofer`
+- prints a per-step and total timing summary when the workflow completes
 
 ### `scripts/build_pdal_pipeline.py`
 
 Small Python helper that:
 
-- reads the local LiDAR tile footprints dataset with `ogrinfo -json`
+- reads the local LiDAR tile index with `ogrinfo -json`
 - reads COPC URLs from the schema-defined `url` property
 - generates a PDAL pipeline with one `readers.copc` per tile
 
@@ -157,7 +159,7 @@ CLI:
 
 ```text
 python3 scripts/build_pdal_pipeline.py \
-  --tiles lidar_tiles.gpkg \
+  --tiles lidar_tile_index.gpkg \
   --layer lidar_tiles \
   --bbox xmin ymin xmax ymax \
   --output-pipeline pdal_pipeline.json \
@@ -166,9 +168,9 @@ python3 scripts/build_pdal_pipeline.py \
 
 Arguments:
 
-- `--tiles`: path to the local LiDAR tile footprint dataset, typically the generated `lidar_tiles.gpkg`
-- `--layer`: name of the LiDAR tile footprint layer to read inside `--tiles` (e.g. `lidar_tiles`)
-- `--bbox`: buffered extraction bbox in `EPSG:2154`, used as the PDAL `bounds` on each `readers.copc`
+- `--tiles`: path to the local LiDAR tile index, typically the generated `lidar_tile_index.gpkg`
+- `--layer`: name of the LiDAR tile index layer to read inside `--tiles` (e.g. `lidar_tiles`)
+- `--bbox`: LiDAR extraction bbox in `EPSG:2154`, used as the PDAL `bounds` on each `readers.copc`
 - `--output-pipeline`: path of the generated `pdal_pipeline.json`
 - `--laz-output`: path of the cropped LAZ file written by the generated PDAL pipeline
 
@@ -195,7 +197,7 @@ CLI:
 ```text
 bash scripts/set_building_attributes.sh \
   --input buildings.gpkg \
-  --output buildings_cleaned.gpkg \
+  --output buildings_prepared.gpkg \
   --layer buildings \
   --ground-min-field altitude_minimale_sol \
   --ground-max-field altitude_maximale_sol \
