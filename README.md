@@ -120,7 +120,7 @@ Host-side entrypoint that:
 CLI:
 
 ```text
-./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean]
+./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean] [--verbose]
 ./run.sh --clean [--out path]
 ```
 
@@ -131,6 +131,7 @@ Arguments:
 - `--out` optional, defaults to `./output`; this is the output root that contains run directories
 - `--jobs` optional, forwarded to `roofer -j`, defaults to `nproc`. For values greater than `1`, roofer reserves one job for the pipeline and uses the others for the reconstructor pool
 - `--clean` optional, clears marked run directories under `--out`. Without `--bbox`, it cleans and exits, while with `--bbox` it cleans before running
+- `--verbose` optional, enables detailed output from the pipeline generator, PDAL, building preparation, roofer, and `cjio`
 
 ### `scripts/run_workflow.sh`
 
@@ -148,6 +149,7 @@ Container-side workflow that:
 - runs `roofer`
 - converts each CityJSONSeq output to a matching CityJSON file with `cjio`
 - prints a per-step and total timing summary when the workflow completes
+- enables additional diagnostics for supported tools when `--verbose` is passed
 
 ### `scripts/build_pdal_pipeline.py`
 
@@ -175,6 +177,7 @@ Arguments:
 - `--bbox`: LiDAR extraction bbox in `EPSG:2154`, used as the PDAL `bounds` on each `readers.copc`
 - `--output-pipeline`: path of the generated `pdal_pipeline.json`
 - `--laz-output`: path of the cropped LAZ file written by the generated PDAL pipeline
+- `--verbose`: print a compact summary of the generated pipeline
 
 ### `scripts/set_building_attributes.sh`
 
@@ -227,7 +230,7 @@ Arguments:
 
 ## Notes
 
-- The runtime image is `3dgi/3dbag-pipeline-tools:2026.06.24`.
+- The runtime image is `3dgi/3dbag-pipeline-tools:2026.07.29`.
 - The tool binaries in that image live under `/opt/3dbag-pipeline/tools/bin`, so the workflow exports that path explicitly before running GDAL, PDAL, and roofer.
 - The building download uses the GDAL WFS driver through `ogr2ogr`.
 - `roofer` treats the input polygons purely as 2D footprints (*roofprints*) and ignores any `Z` present in their geometry. All elevations are derived from the LiDAR point cloud, with the `altitude_*` attributes used only as fallbacks (see step 8). The building download therefore flattens geometries to 2D (`ogr2ogr -dim 2`), which is lossless for this workflow since the polygon `Z` would be discarded by `roofer` anyway.

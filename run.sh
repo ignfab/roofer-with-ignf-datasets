@@ -167,7 +167,7 @@ generate_run_name() {
 usage() {
   cat <<EOF
 Usage:
-  ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean]
+  ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean] [--verbose]
   ./run.sh --clean [--out path]
 
 Options:
@@ -178,6 +178,7 @@ Options:
   --jobs    Optional roofer job count, default: $(detect_default_jobs)
   --clean   Clear marked run directories under --out
             Without --bbox, clean and exit. With --bbox, clean before running
+  --verbose Enable additional diagnostic output
   --help    Show this help message
 EOF
 }
@@ -196,6 +197,7 @@ init_defaults() {
   RUN_NAME="$(generate_run_name)"
   JOBS="${DEFAULT_JOBS}"
   CLEAN_OUTPUT=0
+  VERBOSE=0
   NEEDS_OUTPUT_MARKER=0
   OUT_ROOT=""
   HOST_OUTPUT=""
@@ -232,6 +234,10 @@ parse_args() {
         ;;
       --clean)
         CLEAN_OUTPUT=1
+        shift
+        ;;
+      --verbose)
+        VERBOSE=1
         shift
         ;;
       --help|-h)
@@ -362,16 +368,29 @@ build_docker_args() {
 }
 
 run_workflow() {
+  local workflow_args=(
+    /workspace/scripts/run_workflow.sh
+    --bbox "${BBOX[@]}"
+    --buffer "${BUFFER}"
+    --out /output
+    --jobs "${JOBS}"
+  )
+
+  if (( VERBOSE )); then
+    workflow_args+=(--verbose)
+    echo "Verbose mode enabled"
+    echo "  Image: ${IMAGE}"
+    echo "  Bounding box: ${BBOX[*]}"
+    echo "  Buffer: ${BUFFER} meters"
+    echo "  Roofer jobs: ${JOBS}"
+  fi
+
   echo "Running Docker workflow in ${HOST_OUTPUT}"
 
   exec docker "${DOCKER_ARGS[@]}" \
     --entrypoint bash \
     "${IMAGE}" \
-    /workspace/scripts/run_workflow.sh \
-    --bbox "${BBOX[@]}" \
-    --buffer "${BUFFER}" \
-    --out /output \
-    --jobs "${JOBS}"
+    "${workflow_args[@]}"
 }
 
 main() {

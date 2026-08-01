@@ -120,7 +120,7 @@ Point d'entrée côté hôte qui :
 Ligne de commande :
 
 ```text
-./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean]
+./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean] [--verbose]
 ./run.sh --clean [--out path]
 ```
 
@@ -131,6 +131,7 @@ Arguments :
 - `--out` optionnel, par défaut `./output` ; c'est le répertoire racine de sortie qui contient les répertoires d'exécution
 - `--jobs` optionnel, transmis à `roofer -j`, par défaut `nproc`. Pour les valeurs supérieures à `1`, roofer réserve un job au traitement et utilise les autres pour le pool de reconstruction
 - `--clean` optionnel, vide les répertoires d'exécution marqués sous `--out`. Sans `--bbox`, il nettoie puis quitte, tandis qu'avec `--bbox`, il nettoie avant de lancer le traitement
+- `--verbose` optionnel, active les sorties détaillées du générateur de pipeline, de PDAL, de la préparation des bâtiments, de roofer et de `cjio`
 
 ### `scripts/run_workflow.sh`
 
@@ -148,6 +149,7 @@ Traitement côté conteneur qui :
 - exécute `roofer`
 - convertit chaque sortie CityJSONSeq en un fichier CityJSON correspondant avec `cjio`
 - affiche le temps de chaque étape et le temps total à la fin du traitement
+- active des diagnostics supplémentaires pour les outils compatibles lorsque `--verbose` est passé
 
 ### `scripts/build_pdal_pipeline.py`
 
@@ -175,6 +177,7 @@ Arguments :
 - `--bbox` : emprise d'extraction LiDAR en `EPSG:2154`, utilisée comme `bounds` PDAL sur chaque `readers.copc`
 - `--output-pipeline` : chemin du `pdal_pipeline.json` généré
 - `--laz-output` : chemin du fichier LAZ découpé écrit par la chaîne de traitement PDAL générée
+- `--verbose` : affiche un résumé concis de la chaîne de traitement générée
 
 ### `scripts/set_building_attributes.sh`
 
@@ -227,7 +230,7 @@ Arguments :
 
 ## Notes
 
-- L'image d'exécution est `3dgi/3dbag-pipeline-tools:2026.06.24`.
+- L'image d'exécution est `3dgi/3dbag-pipeline-tools:2026.07.29`.
 - Les binaires des outils de cette image se trouvent sous `/opt/3dbag-pipeline/tools/bin`, c'est pourquoi le traitement exporte explicitement ce chemin avant d'exécuter GDAL, PDAL et roofer.
 - Le téléchargement des bâtiments utilise le pilote WFS de GDAL via `ogr2ogr`.
 - `roofer` traite les polygones d'entrée uniquement comme des emprises 2D (*roofprints*) et ignore tout `Z` présent dans leur géométrie. Toutes les altitudes sont dérivées du nuage de points LiDAR, les attributs `altitude_*` n'étant utilisés que comme valeurs de repli (voir l'étape 8). Le téléchargement des bâtiments aplatit donc les géométries en 2D (`ogr2ogr -dim 2`), ce qui est sans perte pour ce traitement puisque le `Z` des polygones serait de toute façon ignoré par `roofer`.

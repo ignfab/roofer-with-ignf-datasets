@@ -48,6 +48,11 @@ def parse_args() -> argparse.Namespace:
         required=True,
         help="Path to the cropped LAZ file that the generated PDAL pipeline will write.",
     )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print a compact summary of the generated pipeline.",
+    )
     return parser.parse_args()
 
 
@@ -121,10 +126,13 @@ def format_tile_identifier(properties: Dict[str, Any]) -> str:
     return "<unknown tile>"
 
 
-def collect_copc_urls(features: List[Dict[str, Any]]) -> List[str]:
+def collect_copc_urls(
+    features: List[Dict[str, Any]], verbose: bool = False
+) -> List[str]:
     ordered_urls: List[str] = []
     tile_identifiers: List[str] = []
     skipped_identifiers: List[str] = []
+    chunked_url_count = 0
     seen = set()
 
     for feature in features:
@@ -137,6 +145,8 @@ def collect_copc_urls(features: List[Dict[str, Any]]) -> List[str]:
             continue
         url = to_chunked_url(value)
         if url not in seen:
+            if url != value:
+                chunked_url_count += 1
             seen.add(url)
             ordered_urls.append(url)
 
@@ -154,6 +164,15 @@ def collect_copc_urls(features: List[Dict[str, Any]]) -> List[str]:
         raise RuntimeError(
             f"no COPC URLs collected from LiDAR tile '{COPC_URL_FIELD}' property; "
             f"tiles seen: {identifiers}"
+        )
+
+    if verbose:
+        print(
+            f"LiDAR tile index: {len(features)} feature(s), "
+            f"{len(ordered_urls)} unique COPC URL(s), "
+            f"{chunked_url_count} rewritten to the chunked endpoint, "
+            f"{len(skipped_identifiers)} skipped",
+            file=sys.stderr,
         )
 
     return ordered_urls
@@ -202,7 +221,7 @@ def main() -> int:
         raise RuntimeError(
             f"no LiDAR tile index features found in layer '{args.layer}'")
 
-    urls = collect_copc_urls(features)
+    urls = collect_copc_urls(features, verbose=args.verbose)
     bounds = build_bounds_string(args.bbox)
     pipeline = build_pipeline(urls, bounds, args.laz_output)
 
@@ -212,6 +231,14 @@ def main() -> int:
     except OSError as exc:
         raise RuntimeError(
             f"failed to write pipeline file '{args.output_pipeline}': {exc}") from exc
+
+    if args.verbose:
+        print(f"PDAL bounds: {bounds}", file=sys.stderr)
+        print(
+            f"PDAL pipeline written to: {args.output_pipeline}",
+            file=sys.stderr,
+        )
+        print(f"LiDAR output: {args.laz_output}", file=sys.stderr)
 
     return 0
 
