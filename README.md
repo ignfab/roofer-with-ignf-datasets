@@ -17,6 +17,7 @@ The workflow of this project is:
 7. Remap LIDAR HD classification `67 -> 6`, because `roofer` follows the ASPRS LAS standard and only treats class `6` as *building*, whereas IGN LIDAR HD also places building points in its non-standard class `67` (*DIvers - bâtis*, i.e. miscellaneous built structures); without this remap those points would be invisible to `roofer` and lost for roof reconstruction
 8. Clean and complete the building ground and roof elevation attributes, which `roofer` falls back on when a footprint has too few ground points (for the floor elevation) or roof points (for the roof height)
 9. Run `roofer` on the resulting LAZ file and the prepared building GeoPackage
+10. Convert each native CityJSONSeq result to a matching CityJSON file
 <br/>
 <p align="center">
   <a href="docs/imgs/workflow.png" target="_blank"><img src="docs/imgs/workflow.png" alt="Workflow"></a>
@@ -55,12 +56,12 @@ With a custom buffer (default is `10` meters) and output root directory (default
 ./run.sh --bbox 666201 6859851 666701 6860351 --buffer 15 --out ./example-output
 ```
 
-The generated `CityJSONSeq` result files in `output/run-*/roofer_output/` or `example-output/run-*/roofer_output/` can be opened directly in [ninja.cityjson.org](https://ninja.cityjson.org/).
+The generated `CityJSON` result files in `output/run-*/roofer_output/` or `example-output/run-*/roofer_output/` can be opened directly in [ninja.cityjson.org](https://ninja.cityjson.org/).
 
 <p align="center">
-  <img src="docs/imgs/ninja.png" alt="Uploading the generated CityJSONSeq file to ninja.cityjson.org" width="700">
+  <img src="docs/imgs/ninja.png" alt="Uploading the generated CityJSON file to ninja.cityjson.org" width="700">
 </p>
-<p align="center"><em>Open or drag and drop the generated CityJSONSeq output directly in ninja.cityjson.org.</em></p>
+<p align="center"><em>Open or drag and drop the generated CityJSON output directly in ninja.cityjson.org.</em></p>
 
 <p align="center">
   <img src="docs/imgs/ninja_viewer.png" alt="Roofer output displayed in the ninja.cityjson.org viewer" width="700">
@@ -99,7 +100,7 @@ Expected files inside each run directory:
 - `pdal_pipeline.json`: the generated PDAL pipeline
 - `lidar_subset.laz`: the cropped LiDAR subset written by PDAL for the LiDAR extraction bbox, with class `67` remapped to `6`
 - `buildings_prepared.gpkg`: building footprints after attribute cleaning and completion, used as the polygon source for `roofer`
-- `roofer_output/`: the final [CityJSONSeq](https://www.cityjson.org/cityjsonseq/) output produced by `roofer`
+- `roofer_output/`: the native [CityJSONSeq](https://www.cityjson.org/cityjsonseq/) files produced by `roofer` and their matching converted CityJSON files
 - `.roofer-run-output`: marker used by `run.sh` to identify run directories it is allowed to clean with `--clean`
 
 ## What the scripts do
@@ -135,7 +136,7 @@ Arguments:
 
 Container-side workflow that:
 
-- checks that `ogr2ogr`, `ogrinfo`, `pdal`, `roofer`, `python3`, `awk`, and `sed` are present in the runtime image
+- checks that `ogr2ogr`, `ogrinfo`, `pdal`, `roofer`, `cjio`, `python3`, `awk`, and `sed` are present in the runtime image
 - downloads building footprints from `BDTOPO_V3:batiment`
 - computes the real building extent
 - prepares the LiDAR extraction bbox by buffering that extent
@@ -145,6 +146,7 @@ Container-side workflow that:
 - extracts the LiDAR subset with `pdal pipeline`
 - prepares the building footprints with `set_building_attributes.sh` (requires `sqlite3`)
 - runs `roofer`
+- converts each CityJSONSeq output to a matching CityJSON file with `cjio`
 - prints a per-step and total timing summary when the workflow completes
 
 ### `scripts/build_pdal_pipeline.py`
@@ -232,7 +234,7 @@ Arguments:
 - The implementation relies on GDAL paging support and does not implement any custom WFS paging code.
 - The LiDAR extraction keeps the streamed crop on each `readers.copc` entry. It does not crop full tiles after download.
 - The only LiDAR-specific transformation in this example is the class remapping `67 -> 6`, which aligns IGN's *bâtis divers* class with the ASPRS class `6` that `roofer` expects for buildings (see step 7).
-- The final deliverable in this minimal workflow is the native `CityJSONSeq` output from `roofer`.
+- The workflow retains the native `CityJSONSeq` output from `roofer` and writes a matching `CityJSON` file beside it.
 - Bounding box size directly drives runtime and reliability. A larger bbox means more buildings and more LiDAR tiles, all fetched through paged WFS requests: every extra page is another network round-trip that can time out or be cut short server-side, so very large areas are both slower and more likely to fail mid-download. The bbox is intentionally not capped in code, since the right size depends on your machine, network, and patience. **For large areas, prefer splitting the work into several smaller runs rather than issuing a single very large request.** The `--buffer` is a secondary expansion applied automatically around the building extent, so it is capped at `500` meters to guard against accidental runaway downloads.
 
 ## References

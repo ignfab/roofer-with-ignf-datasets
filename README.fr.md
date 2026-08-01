@@ -17,6 +17,7 @@ Le déroulé de ce projet est le suivant :
 7. Remapper la classification LIDAR HD `67 -> 6`, car `roofer` suit le standard ASPRS LAS et ne considère que la classe `6` comme *bâtiment*, alors que le LIDAR HD de l'IGN place aussi des points de bâtiment dans sa classe non standard `67` (*Divers - bâtis*, c'est-à-dire les structures bâties diverses) ; sans ce remappage, ces points seraient invisibles pour `roofer` et perdus pour la reconstruction des toits
 8. Nettoyer et compléter les attributs d'altitude du sol et du toit des bâtiments, sur lesquels `roofer` se rabat lorsqu'une emprise a trop peu de points sol (pour l'altitude du plancher) ou de points toit (pour la hauteur du toit)
 9. Exécuter `roofer` sur le fichier LAZ obtenu et le GeoPackage des bâtiments préparé
+10. Convertir chaque résultat CityJSONSeq natif en un fichier CityJSON correspondant
 <br/>
 <p align="center">
   <a href="docs/imgs/workflow.png" target="_blank"><img src="docs/imgs/workflow.png" alt="Workflow"></a>
@@ -55,12 +56,12 @@ Avec une zone tampon personnalisée (la valeur par défaut est `10` mètres) et 
 ./run.sh --bbox 666201 6859851 666701 6860351 --buffer 15 --out ./example-output
 ```
 
-Les fichiers de résultats `CityJSONSeq` générés dans `output/run-*/roofer_output/` ou `example-output/run-*/roofer_output/` peuvent être ouverts directement dans [ninja.cityjson.org](https://ninja.cityjson.org/).
+Les fichiers de résultats `CityJSON` générés dans `output/run-*/roofer_output/` ou `example-output/run-*/roofer_output/` peuvent être ouverts directement dans [ninja.cityjson.org](https://ninja.cityjson.org/).
 
 <p align="center">
-  <img src="docs/imgs/ninja.png" alt="Chargement du fichier CityJSONSeq généré sur ninja.cityjson.org" width="700">
+  <img src="docs/imgs/ninja.png" alt="Chargement du fichier CityJSON généré sur ninja.cityjson.org" width="700">
 </p>
-<p align="center"><em>Ouvrez ou glissez-déposez la sortie CityJSONSeq générée directement dans ninja.cityjson.org.</em></p>
+<p align="center"><em>Ouvrez ou glissez-déposez la sortie CityJSON générée directement dans ninja.cityjson.org.</em></p>
 
 <p align="center">
   <img src="docs/imgs/ninja_viewer.png" alt="Sortie de roofer affichée dans la visionneuse ninja.cityjson.org" width="700">
@@ -99,7 +100,7 @@ Fichiers attendus dans chaque répertoire d'exécution :
 - `pdal_pipeline.json` : la chaîne de traitement PDAL générée
 - `lidar_subset.laz` : le sous-ensemble LiDAR découpé écrit par PDAL pour l'emprise d'extraction LiDAR, avec la classe `67` remappée en `6`
 - `buildings_prepared.gpkg` : les emprises de bâtiments après nettoyage et complétion des attributs, utilisées comme source de polygones pour `roofer`
-- `roofer_output/` : la sortie finale au format [CityJSONSeq](https://www.cityjson.org/cityjsonseq/) produite par `roofer`
+- `roofer_output/` : les fichiers [CityJSONSeq](https://www.cityjson.org/cityjsonseq/) natifs produits par `roofer` et les fichiers CityJSON correspondants issus de leur conversion
 - `.roofer-run-output` : marqueur utilisé par `run.sh` pour identifier les répertoires d'exécution qu'il est autorisé à nettoyer avec `--clean`
 
 ## Ce que font les scripts
@@ -135,7 +136,7 @@ Arguments :
 
 Traitement côté conteneur qui :
 
-- vérifie que `ogr2ogr`, `ogrinfo`, `pdal`, `roofer`, `python3`, `awk` et `sed` sont présents dans l'image d'exécution
+- vérifie que `ogr2ogr`, `ogrinfo`, `pdal`, `roofer`, `cjio`, `python3`, `awk` et `sed` sont présents dans l'image d'exécution
 - télécharge les bâtiments depuis `BDTOPO_V3:batiment`
 - calcule l'étendue réelle des bâtiments
 - prépare l'emprise d'extraction LiDAR en appliquant une zone tampon à cette étendue
@@ -145,6 +146,7 @@ Traitement côté conteneur qui :
 - extrait le sous-ensemble LiDAR avec `pdal pipeline`
 - prépare les emprises de bâtiments avec `set_building_attributes.sh` (nécessite `sqlite3`)
 - exécute `roofer`
+- convertit chaque sortie CityJSONSeq en un fichier CityJSON correspondant avec `cjio`
 - affiche le temps de chaque étape et le temps total à la fin du traitement
 
 ### `scripts/build_pdal_pipeline.py`
@@ -232,7 +234,7 @@ Arguments :
 - L'implémentation s'appuie sur la prise en charge de la pagination par GDAL et n'implémente aucun code de pagination WFS personnalisé.
 - L'extraction LiDAR conserve le découpage diffusé sur chaque entrée `readers.copc`. Elle ne découpe pas des dalles entières après téléchargement.
 - La seule transformation spécifique au LiDAR dans cet exemple est le remappage de classe `67 -> 6`, qui aligne la classe *bâtis divers* de l'IGN sur la classe ASPRS `6` que `roofer` attend pour les bâtiments (voir l'étape 7).
-- Le livrable final de ce traitement minimal est la sortie native `CityJSONSeq` de `roofer`.
+- Le traitement conserve la sortie `CityJSONSeq` native de `roofer` et écrit à côté le fichier `CityJSON` correspondant.
 - La taille de l'emprise détermine directement le temps d'exécution et la fiabilité. Une emprise plus grande signifie plus de bâtiments et plus de dalles LiDAR, tous récupérés via des requêtes WFS paginées : chaque page supplémentaire est un aller-retour réseau de plus qui peut expirer ou être interrompu côté serveur, de sorte que les très grandes zones sont à la fois plus lentes et plus susceptibles d'échouer en cours de téléchargement. L'emprise n'est volontairement pas plafonnée dans le code, car la bonne taille dépend de votre machine, de votre réseau et de votre patience. **Pour les grandes zones, privilégiez le découpage du travail en plusieurs exécutions plus petites plutôt que d'émettre une seule requête très volumineuse.** Le `--buffer` est une expansion secondaire appliquée automatiquement autour de l'étendue des bâtiments, il est donc plafonné à `500` mètres pour se prémunir contre des téléchargements incontrôlés accidentels.
 
 ## Références

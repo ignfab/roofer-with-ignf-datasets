@@ -91,7 +91,7 @@ detect_default_roofer_jobs() {
 }
 
 check_required_commands() {
-  local required_commands=(ogr2ogr ogrinfo pdal roofer python3 awk sed)
+  local required_commands=(ogr2ogr ogrinfo pdal roofer cjio python3 awk sed)
   local command_name=""
 
   for command_name in "${required_commands[@]}"; do
@@ -387,6 +387,24 @@ run_roofer() {
     "$ROOFER_OUTPUT_DIR"
 }
 
+convert_to_cityjson() {
+  local cityjsonseq_file=""
+  local cityjson_file=""
+  local converted_file_found=0
+
+  log "Converting roofer output to CityJSON"
+
+  for cityjsonseq_file in "$ROOFER_OUTPUT_DIR"/*.city.jsonl; do
+    [[ -f "$cityjsonseq_file" ]] || continue
+    cityjson_file="${cityjsonseq_file%.jsonl}.json"
+    cjio --suppress_msg stdin save "$cityjson_file" <"$cityjsonseq_file"
+    converted_file_found=1
+  done
+
+  (( converted_file_found )) \
+    || die "roofer produced no CityJSONSeq file in $ROOFER_OUTPUT_DIR"
+}
+
 # -----------------------------------------------------------------------------
 # Entry point
 # -----------------------------------------------------------------------------
@@ -408,6 +426,7 @@ main() {
   run_timed_step "Extract LiDAR subset" extract_lidar_subset
   run_timed_step "Prepare buildings for roofer" prepare_buildings_for_roofer
   run_timed_step "Run roofer" run_roofer
+  run_timed_step "Convert to CityJSON" convert_to_cityjson
 
   log "Workflow completed"
   print_timing_summary "$((SECONDS - workflow_started_at))"
