@@ -2,7 +2,7 @@
 
 **Language:** [🇬🇧 English](README.md) · [🇫🇷 Français](README.fr.md)
 
-This repository is a minimal, Docker-first example showing how to use [roofer](https://github.com/3DBAG/roofer) with [IGNF](https://github.com/IGNF) datasets ([BD TOPO](https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO) and [LIDAR HD](https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD)) to produce 3D LOD2.2 buildings. This is a starting point for experimenting.
+This repository is a minimal, Docker-first example showing how to use [roofer](https://github.com/3DBAG/roofer) with [IGNF](https://github.com/IGNF) datasets ([BD TOPO®](https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO) and [LiDAR HD](https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD)) to produce 3D LOD2.2 buildings. This is a starting point for experimenting.
 
 `roofer` is the [3DBAG](https://3dbag.nl/en/viewer) reconstruction tool that turns building footprints and point clouds into 3D building models. The wider [3dbag-pipeline](https://github.com/3DBAG/3dbag-pipeline) project shows how these tools are used in larger production workflows. This repository focuses on a much smaller example: starting from a Lambert-93 bounding box, downloading the required IGNF data from its [Géoplateforme](https://www.ign.fr/geoplateforme), and preparing the inputs needed to run `roofer` and produce 3D buildings.
 
@@ -14,7 +14,7 @@ The workflow of this project is:
 4. Define the LiDAR extraction bbox by adding a configurable buffer around that extent
 5. Query the `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` tile index from the [IGN WFS](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) with pagination support
 6. Build a PDAL pipeline that streams exactly the LiDAR covering the extraction bbox, cropped from the intersecting COPC tiles
-7. Remap LIDAR HD classification `67 -> 6`, because `roofer` follows the ASPRS LAS standard and only treats class `6` as *building*, whereas IGN LIDAR HD also places building points in its non-standard class `67` (*DIvers - bâtis*, i.e. miscellaneous built structures); without this remap those points would be invisible to `roofer` and lost for roof reconstruction
+7. Remap LiDAR HD classification `67 -> 6`, because `roofer` follows the ASPRS LAS standard and only treats class `6` as *building*, whereas IGN LiDAR HD also places building points in its non-standard class `67` (*Divers - bâtis*, i.e. miscellaneous built structures). Without this remap those points would be invisible to `roofer` and lost for roof reconstruction
 8. Clean and complete the building ground and roof elevation attributes, which `roofer` falls back on when a footprint has too few ground points (for the floor elevation) or roof points (for the roof height)
 9. Run `roofer` on the resulting LAZ file and the prepared building GeoPackage
 10. Convert each native CityJSONSeq result to a matching CityJSON file
@@ -39,7 +39,7 @@ The goal is to keep the code and user setup as simple as possible. The host only
 - A POSIX `bash` to run `run.sh` (macOS ships bash 3.2, which is sufficient)
 - Network access to:
   - `https://data.geopf.fr`
-  - the COPC storage URLs returned by the LiDAR tiles WFS
+  - the COPC storage URLs returned by the LiDAR HD tiles WFS
   - Docker Hub to pull `3dgi/3dbag-pipeline-tools:2026.07.29`
 
 ## Quick start
@@ -100,7 +100,7 @@ Expected files inside each run directory:
 - `pdal_pipeline.json`: the generated PDAL pipeline
 - `lidar_subset.laz`: the cropped LiDAR subset written by PDAL for the LiDAR extraction bbox, with class `67` remapped to `6`
 - `buildings_prepared.gpkg`: building footprints after attribute cleaning and completion, used as the polygon source for `roofer`
-- `roofer_output/`: the native [CityJSONSeq](https://www.cityjson.org/cityjsonseq/) files produced by `roofer` and their matching converted CityJSON files
+- `roofer_output/`: the native [CityJSONSeq](https://www.cityjson.org/cityjsonseq/) files produced by `roofer` and their matching converted [CityJSON](https://www.cityjson.org/specs/2.0.2/) files
 - `.roofer-run-output`: marker used by `run.sh` to identify run directories it is allowed to clean with `--clean`
 
 ## What the scripts do
@@ -119,7 +119,7 @@ Host-side entrypoint that:
 
 CLI:
 
-```text
+```bash
 ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean] [--verbose]
 ./run.sh --clean [--out path]
 ```
@@ -161,7 +161,7 @@ Small Python helper that:
 
 CLI:
 
-```text
+```bash
 python3 scripts/build_pdal_pipeline.py \
   --tiles lidar_tile_index.gpkg \
   --layer lidar_tiles \
@@ -199,7 +199,7 @@ The script:
 
 CLI:
 
-```text
+```bash
 bash scripts/set_building_attributes.sh \
   --input buildings.gpkg \
   --output buildings_prepared.gpkg \
@@ -233,8 +233,8 @@ Arguments:
 - The runtime image is `3dgi/3dbag-pipeline-tools:2026.07.29`.
 - The tool binaries in that image live under `/opt/3dbag-pipeline/tools/bin`, so the workflow exports that path explicitly before running GDAL, PDAL, and roofer.
 - The building download uses the GDAL WFS driver through `ogr2ogr`.
-- `roofer` treats the input polygons purely as 2D footprints (*roofprints*) and ignores any `Z` present in their geometry. All elevations are derived from the LiDAR point cloud, with the `altitude_*` attributes used only as fallbacks (see step 8). The building download therefore flattens geometries to 2D (`ogr2ogr -dim 2`), which is lossless for this workflow since the polygon `Z` would be discarded by `roofer` anyway.
 - The implementation relies on GDAL paging support and does not implement any custom WFS paging code.
+- `roofer` treats the input polygons purely as 2D footprints (*roofprints*) and ignores any `Z` present in their geometry. All elevations are derived from the LiDAR point cloud, with the `altitude_*` attributes used only as fallbacks (see step 8). The building download therefore flattens geometries to 2D (`ogr2ogr -dim 2`), which is lossless for this workflow since the polygon `Z` would be discarded by `roofer` anyway.
 - The LiDAR extraction keeps the streamed crop on each `readers.copc` entry. It does not crop full tiles after download.
 - The only LiDAR-specific transformation in this example is the class remapping `67 -> 6`, which aligns IGN's *bâtis divers* class with the ASPRS class `6` that `roofer` expects for buildings (see step 7).
 - The workflow retains the native `CityJSONSeq` output from `roofer` and writes a matching `CityJSON` file beside it.
@@ -242,8 +242,8 @@ Arguments:
 
 ## References
 
-- IGN LIDAR HD product page: <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD>
-- IGN LIDAR HD content descriptor (classification nomenclature, incl. class `67`): <https://geoservices.ign.fr/sites/default/files/2024-09/DC_LiDAR_HD_1-0.pdf>
+- IGN LiDAR HD product page: <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD>
+- IGN LiDAR HD content descriptor (classification nomenclature, incl. class `67`): <https://geoservices.ign.fr/sites/default/files/2024-09/DC_LiDAR_HD_1-0.pdf>
 - IGN BDTOPO product page: <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO>
 - IGN BDTOPO content descriptor: <https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf>
 - IGN WFS service: <https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/>

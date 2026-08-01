@@ -2,7 +2,7 @@
 
 **Langue:** [🇬🇧 English](README.md) · [🇫🇷 Français](README.fr.md)
 
-Ce dépôt est un exemple minimal, pensé en priorité pour Docker, qui montre comment utiliser [roofer](https://github.com/3DBAG/roofer) avec les jeux de données de l'[IGN](https://github.com/IGNF) ([BD TOPO](https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO) et [LIDAR HD](https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD)) pour produire des bâtiments 3D en LOD2.2. C'est un point de départ pour expérimenter.
+Ce dépôt est un exemple minimal, pensé en priorité pour Docker, qui montre comment utiliser [roofer](https://github.com/3DBAG/roofer) avec les jeux de données de l'[IGN](https://github.com/IGNF) ([BD TOPO®](https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO) et [LiDAR HD](https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD)) pour produire des bâtiments 3D en LOD2.2. C'est un point de départ pour expérimenter.
 
 `roofer` est l'outil de reconstruction de [3DBAG](https://3dbag.nl/en/viewer) qui transforme des emprises de bâtiments et des nuages de points en modèles de bâtiments 3D. Le projet plus large [3dbag-pipeline](https://github.com/3DBAG/3dbag-pipeline) montre comment ces outils sont utilisés dans des chaînes de traitement de production plus importantes. Ce dépôt se concentre sur un exemple beaucoup plus restreint : partir d'une emprise (*bounding box*) en Lambert-93, télécharger les données IGN nécessaires depuis sa [Géoplateforme](https://www.ign.fr/geoplateforme), et préparer les entrées requises pour exécuter `roofer` et produire des bâtiments 3D.
 
@@ -14,7 +14,7 @@ Le déroulé de ce projet est le suivant :
 4. Définir l'emprise d'extraction LiDAR en ajoutant une zone tampon (*buffer*) configurable autour de cette étendue
 5. Interroger l'index des dalles `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` depuis le [WFS de l'IGN](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) avec prise en charge de la pagination
 6. Construire une chaîne de traitement (*pipeline*) PDAL qui diffuse exactement le LiDAR couvrant l'emprise d'extraction, découpé à partir des dalles COPC intersectées
-7. Remapper la classification LIDAR HD `67 -> 6`, car `roofer` suit le standard ASPRS LAS et ne considère que la classe `6` comme *bâtiment*, alors que le LIDAR HD de l'IGN place aussi des points de bâtiment dans sa classe non standard `67` (*Divers - bâtis*, c'est-à-dire les structures bâties diverses) ; sans ce remappage, ces points seraient invisibles pour `roofer` et perdus pour la reconstruction des toits
+7. Remapper la classification LiDAR HD `67 -> 6`, car `roofer` suit le standard ASPRS LAS et ne considère que la classe `6` comme *bâtiment*, alors que le LiDAR HD de l'IGN place aussi des points de bâtiment dans sa classe non standard `67` (*Divers - bâtis*, c'est-à-dire les structures bâties diverses). Sans ce remappage, ces points seraient invisibles pour `roofer` et perdus pour la reconstruction des toits
 8. Nettoyer et compléter les attributs d'altitude du sol et du toit des bâtiments, sur lesquels `roofer` se rabat lorsqu'une emprise a trop peu de points sol (pour l'altitude du plancher) ou de points toit (pour la hauteur du toit)
 9. Exécuter `roofer` sur le fichier LAZ obtenu et le GeoPackage des bâtiments préparé
 10. Convertir chaque résultat CityJSONSeq natif en un fichier CityJSON correspondant
@@ -30,8 +30,8 @@ L'objectif est de garder le code et la configuration utilisateur aussi simples q
 - Hôte Linux ou macOS (le traitement lui-même s'exécute toujours dans un conteneur Linux)
 - Docker uniquement
 - L'emprise d'entrée doit être en `EPSG:2154` pour le moment
-- Une seule emprise à la fois
-- Pas d'installation locale native
+- Une seule emprise de génération à la fois
+- Aucune installation locale native
 
 ## Prérequis
 
@@ -39,7 +39,7 @@ L'objectif est de garder le code et la configuration utilisateur aussi simples q
 - Un `bash` POSIX pour exécuter `run.sh` (macOS est livré avec bash 3.2, ce qui est suffisant)
 - Un accès réseau vers :
   - `https://data.geopf.fr`
-  - les URL de stockage COPC renvoyées par le WFS des dalles LiDAR
+  - les URL de stockage COPC renvoyées par le WFS des dalles LiDAR HD
   - Docker Hub pour récupérer `3dgi/3dbag-pipeline-tools:2026.07.29`
 
 ## Démarrage rapide
@@ -89,7 +89,7 @@ export NO_PROXY=localhost,127.0.0.1
 
 ## Sorties
 
-Le traitement écrit tous les artefacts intermédiaires dans un répertoire d'exécution dédié sous le répertoire racine de sortie (`--out`), afin que le processus reste facile à inspecter et à déboguer. Chaque répertoire d'exécution est nommé `run-YYYYMMDD-HHMMSS`. Les répertoires d'exécution existants contenant des artefacts antérieurs sont refusés par défaut ; passez `--clean` pour vider les répertoires d'exécution marqués avant l'exécution.
+Le traitement écrit tous les artefacts intermédiaires dans un répertoire d'exécution dédié sous le répertoire racine de sortie (`--out`), afin que le processus reste facile à inspecter et à déboguer. Chaque répertoire d'exécution est nommé `run-YYYYMMDD-HHMMSS`. Les répertoires d'exécution existants contenant des artefacts antérieurs sont refusés par défaut. Utilisez `--clean` pour vider les répertoires d'exécution marqués avant l'exécution.
 
 Fichiers attendus dans chaque répertoire d'exécution :
 
@@ -100,7 +100,7 @@ Fichiers attendus dans chaque répertoire d'exécution :
 - `pdal_pipeline.json` : la chaîne de traitement PDAL générée
 - `lidar_subset.laz` : le sous-ensemble LiDAR découpé écrit par PDAL pour l'emprise d'extraction LiDAR, avec la classe `67` remappée en `6`
 - `buildings_prepared.gpkg` : les emprises de bâtiments après nettoyage et complétion des attributs, utilisées comme source de polygones pour `roofer`
-- `roofer_output/` : les fichiers [CityJSONSeq](https://www.cityjson.org/cityjsonseq/) natifs produits par `roofer` et les fichiers CityJSON correspondants issus de leur conversion
+- `roofer_output/` : les fichiers [CityJSONSeq](https://www.cityjson.org/cityjsonseq/) natifs produits par `roofer` et les fichiers [CityJSON](https://www.cityjson.org/specs/2.0.2/) correspondants issus de leur conversion
 - `.roofer-run-output` : marqueur utilisé par `run.sh` pour identifier les répertoires d'exécution qu'il est autorisé à nettoyer avec `--clean`
 
 ## Ce que font les scripts
@@ -119,7 +119,7 @@ Point d'entrée côté hôte qui :
 
 Ligne de commande :
 
-```text
+```bash
 ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean] [--verbose]
 ./run.sh --clean [--out path]
 ```
@@ -157,11 +157,11 @@ Petit utilitaire Python qui :
 
 - lit l'index local des dalles LiDAR avec `ogrinfo -json`
 - lit les URL COPC depuis la propriété `url` définie dans le schéma
-- génère une chaîne de traitement PDAL avec un `readers.copc` par dalle
+- génère une chaîne de traitement (aussi appelée _pipeline_) PDAL avec un `readers.copc` par dalle
 
 Ligne de commande :
 
-```text
+```bash
 python3 scripts/build_pdal_pipeline.py \
   --tiles lidar_tile_index.gpkg \
   --layer lidar_tiles \
@@ -199,7 +199,7 @@ Le script :
 
 Ligne de commande :
 
-```text
+```bash
 bash scripts/set_building_attributes.sh \
   --input buildings.gpkg \
   --output buildings_prepared.gpkg \
@@ -233,17 +233,17 @@ Arguments :
 - L'image d'exécution est `3dgi/3dbag-pipeline-tools:2026.07.29`.
 - Les binaires des outils de cette image se trouvent sous `/opt/3dbag-pipeline/tools/bin`, c'est pourquoi le traitement exporte explicitement ce chemin avant d'exécuter GDAL, PDAL et roofer.
 - Le téléchargement des bâtiments utilise le pilote WFS de GDAL via `ogr2ogr`.
-- `roofer` traite les polygones d'entrée uniquement comme des emprises 2D (*roofprints*) et ignore tout `Z` présent dans leur géométrie. Toutes les altitudes sont dérivées du nuage de points LiDAR, les attributs `altitude_*` n'étant utilisés que comme valeurs de repli (voir l'étape 8). Le téléchargement des bâtiments aplatit donc les géométries en 2D (`ogr2ogr -dim 2`), ce qui est sans perte pour ce traitement puisque le `Z` des polygones serait de toute façon ignoré par `roofer`.
 - L'implémentation s'appuie sur la prise en charge de la pagination par GDAL et n'implémente aucun code de pagination WFS personnalisé.
+- `roofer` traite les polygones d'entrée uniquement comme des emprises 2D (*roofprints*) et ignore tout `Z` présent dans leur géométrie. Toutes les altitudes sont dérivées du nuage de points LiDAR, les attributs `altitude_*` n'étant utilisés que comme valeurs de repli (voir l'étape 8). Le téléchargement des bâtiments aplatit donc les géométries en 2D (`ogr2ogr -dim 2`), ce qui est sans perte pour ce traitement puisque le `Z` des polygones serait de toute façon ignoré par `roofer`.
 - L'extraction LiDAR conserve le découpage diffusé sur chaque entrée `readers.copc`. Elle ne découpe pas des dalles entières après téléchargement.
 - La seule transformation spécifique au LiDAR dans cet exemple est le remappage de classe `67 -> 6`, qui aligne la classe *bâtis divers* de l'IGN sur la classe ASPRS `6` que `roofer` attend pour les bâtiments (voir l'étape 7).
 - Le traitement conserve la sortie `CityJSONSeq` native de `roofer` et écrit à côté le fichier `CityJSON` correspondant.
-- La taille de l'emprise détermine directement le temps d'exécution et la fiabilité. Une emprise plus grande signifie plus de bâtiments et plus de dalles LiDAR, tous récupérés via des requêtes WFS paginées : chaque page supplémentaire est un aller-retour réseau de plus qui peut expirer ou être interrompu côté serveur, de sorte que les très grandes zones sont à la fois plus lentes et plus susceptibles d'échouer en cours de téléchargement. L'emprise n'est volontairement pas plafonnée dans le code, car la bonne taille dépend de votre machine, de votre réseau et de votre patience. **Pour les grandes zones, privilégiez le découpage du travail en plusieurs exécutions plus petites plutôt que d'émettre une seule requête très volumineuse.** Le `--buffer` est une expansion secondaire appliquée automatiquement autour de l'étendue des bâtiments, il est donc plafonné à `500` mètres pour se prémunir contre des téléchargements incontrôlés accidentels.
+- La taille de l'emprise de génération détermine directement le temps d'exécution et la fiabilité. Une emprise plus grande signifie plus de bâtiments et plus de dalles LiDAR, tous récupérés via des requêtes WFS paginées : chaque page supplémentaire est un aller-retour réseau de plus qui peut expirer ou être interrompu côté serveur, de sorte que les très grandes zones sont à la fois plus lentes et plus susceptibles d'échouer en cours de téléchargement. L'emprise n'est volontairement pas plafonnée dans le code, car la bonne taille dépend de votre machine, de votre réseau et de votre patience. **Pour les grandes zones, privilégiez le découpage du travail en plusieurs exécutions plus petites plutôt que d'émettre une seule requête très volumineuse.** Le `--buffer` est une expansion secondaire appliquée automatiquement autour de l'étendue des bâtiments, il est donc plafonné à `500` mètres pour se prémunir contre des téléchargements incontrôlés accidentels.
 
 ## Références
 
-- Page produit IGN LIDAR HD : <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD>
-- Descriptif de contenu IGN LIDAR HD (nomenclature de classification, incl. la classe `67`) : <https://geoservices.ign.fr/sites/default/files/2024-09/DC_LiDAR_HD_1-0.pdf>
+- Page produit IGN LiDAR HD : <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD>
+- Descriptif de contenu IGN LiDAR HD (nomenclature de classification, incl. la classe `67`) : <https://geoservices.ign.fr/sites/default/files/2024-09/DC_LiDAR_HD_1-0.pdf>
 - Page produit IGN BDTOPO : <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO>
 - Descriptif de contenu IGN BDTOPO : <https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf>
 - Service WFS de l'IGN : <https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/>
