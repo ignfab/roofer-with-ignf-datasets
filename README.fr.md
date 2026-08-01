@@ -120,15 +120,16 @@ Ligne de commande :
 
 ```text
 ./run.sh --bbox xmin ymin xmax ymax [--buffer meters] [--out path] [--jobs n] [--clean]
+./run.sh --clean [--out path]
 ```
 
 Arguments :
 
-- `--bbox xmin ymin xmax ymax` requis, emprise d'entrée en `EPSG:2154`
+- `--bbox xmin ymin xmax ymax` emprise d'entrée en `EPSG:2154`, requise pour lancer le traitement
 - `--buffer` optionnel, entre `0` et `500` mètres, par défaut `10` mètres
 - `--out` optionnel, par défaut `./output` ; c'est le répertoire racine de sortie qui contient les répertoires d'exécution
 - `--jobs` optionnel, transmis à `roofer -j`, par défaut `nproc`. Pour les valeurs supérieures à `1`, roofer réserve un job au traitement et utilise les autres pour le pool de reconstruction
-- `--clean` optionnel, vide les répertoires d'exécution marqués sous `--out`
+- `--clean` optionnel, vide les répertoires d'exécution marqués sous `--out`. Sans `--bbox`, il nettoie puis quitte, tandis qu'avec `--bbox`, il nettoie avant de lancer le traitement
 
 ### `scripts/run_workflow.sh`
 
