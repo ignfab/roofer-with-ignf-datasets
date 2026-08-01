@@ -11,12 +11,12 @@ Le déroulé de ce projet est le suivant :
 1. Partir d'une emprise (*bounding box*) en Lambert-93 (`EPSG:2154`)
 2. Télécharger les bâtiments `BDTOPO_V3:batiment` depuis le [WFS de l'IGN](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) avec prise en charge de la pagination
 3. Calculer l'étendue réelle des bâtiments téléchargés
-4. Ajouter une zone tampon (*buffer*) configurable autour de cette étendue
-5. Interroger `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` depuis le [WFS de l'IGN](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) avec prise en charge de la pagination
-6. Construire une chaîne de traitement (*pipeline*) PDAL qui diffuse exactement le LiDAR couvrant l'étendue tamponnée, découpé à partir des dalles COPC intersectées
+4. Définir l'emprise d'extraction LiDAR en ajoutant une zone tampon (*buffer*) configurable autour de cette étendue
+5. Interroger l'index des dalles `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` depuis le [WFS de l'IGN](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) avec prise en charge de la pagination
+6. Construire une chaîne de traitement (*pipeline*) PDAL qui diffuse exactement le LiDAR couvrant l'emprise d'extraction, découpé à partir des dalles COPC intersectées
 7. Remapper la classification LIDAR HD `67 -> 6`, car `roofer` suit le standard ASPRS LAS et ne considère que la classe `6` comme *bâtiment*, alors que le LIDAR HD de l'IGN place aussi des points de bâtiment dans sa classe non standard `67` (*Divers - bâtis*, c'est-à-dire les structures bâties diverses) ; sans ce remappage, ces points seraient invisibles pour `roofer` et perdus pour la reconstruction des toits
 8. Nettoyer et compléter les attributs d'altitude du sol et du toit des bâtiments, sur lesquels `roofer` se rabat lorsqu'une emprise a trop peu de points sol (pour l'altitude du plancher) ou de points toit (pour la hauteur du toit)
-9. Exécuter `roofer` sur le fichier LAZ obtenu et le GeoPackage des bâtiments nettoyé
+9. Exécuter `roofer` sur le fichier LAZ obtenu et le GeoPackage des bâtiments préparé
 <br/>
 <p align="center">
   <a href="docs/imgs/workflow.png" target="_blank"><img src="docs/imgs/workflow.png" alt="Workflow"></a>
@@ -93,12 +93,12 @@ Le traitement écrit tous les artefacts intermédiaires dans un répertoire d'ex
 Fichiers attendus dans chaque répertoire d'exécution :
 
 - `buildings.gpkg` : emprises de bâtiments téléchargées depuis `BDTOPO_V3:batiment` en `EPSG:2154` et normalisées en `MULTIPOLYGON`
-- `building_bbox.json` : l'étendue réelle des bâtiments calculée à partir de la couche de bâtiments téléchargée
-- `buffered_bbox.json` : l'étendue des bâtiments après application de la zone tampon définie par l'utilisateur
-- `lidar_tiles.gpkg` : les entités de dalles LiDAR renvoyées par `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` pour l'emprise tamponnée
+- `buildings_extent.json` : l'étendue réelle des bâtiments calculée à partir de la couche de bâtiments téléchargée
+- `lidar_extraction_bbox.json` : l'étendue avec buffer des bâtiments utilisée pour interroger et découper les données LiDAR
+- `lidar_tile_index.gpkg` : l'index local des dalles LiDAR contenant les emprises, les identifiants, les noms et les URL COPC renvoyées par `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
 - `pdal_pipeline.json` : la chaîne de traitement PDAL générée
-- `lidar_subset.laz` : le sous-ensemble LiDAR découpé écrit par PDAL pour l'emprise tamponnée, avec la classe `67` remappée en `6`
-- `buildings_cleaned.gpkg` : les emprises de bâtiments après nettoyage et complétion des attributs, utilisées comme source de polygones pour `roofer`
+- `lidar_subset.laz` : le sous-ensemble LiDAR découpé écrit par PDAL pour l'emprise d'extraction LiDAR, avec la classe `67` remappée en `6`
+- `buildings_prepared.gpkg` : les emprises de bâtiments après nettoyage et complétion des attributs, utilisées comme source de polygones pour `roofer`
 - `roofer_output/` : la sortie finale au format [CityJSONSeq](https://www.cityjson.org/cityjsonseq/) produite par `roofer`
 - `.roofer-run-output` : marqueur utilisé par `run.sh` pour identifier les répertoires d'exécution qu'il est autorisé à nettoyer avec `--clean`
 
@@ -137,19 +137,19 @@ Traitement côté conteneur qui :
 - vérifie que `ogr2ogr`, `ogrinfo`, `pdal`, `roofer`, `python3`, `awk` et `sed` sont présents dans l'image d'exécution
 - télécharge les bâtiments depuis `BDTOPO_V3:batiment`
 - calcule l'étendue réelle des bâtiments
-- applique une zone tampon à cette étendue
-- télécharge les emprises de dalles LiDAR depuis `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
+- prépare l'emprise d'extraction LiDAR en appliquant une zone tampon à cette étendue
+- télécharge l'index des dalles LiDAR depuis `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
 - lit les URL COPC depuis l'attribut `url` des dalles
-- génère `pdal_pipeline.json` pour extraire la portion de bâtiment nécessaire à la reconstruction
-- exécute `pdal pipeline`
-- nettoie et complète les attributs des bâtiments avec `set_building_attributes.sh` (nécessite `sqlite3`)
+- génère `pdal_pipeline.json` pour extraire le sous-ensemble LiDAR nécessaire
+- extrait le sous-ensemble LiDAR avec `pdal pipeline`
+- prépare les emprises de bâtiments avec `set_building_attributes.sh` (nécessite `sqlite3`)
 - exécute `roofer`
 
 ### `scripts/build_pdal_pipeline.py`
 
 Petit utilitaire Python qui :
 
-- lit le jeu de données local des emprises de dalles LiDAR avec `ogrinfo -json`
+- lit l'index local des dalles LiDAR avec `ogrinfo -json`
 - lit les URL COPC depuis la propriété `url` définie dans le schéma
 - génère une chaîne de traitement PDAL avec un `readers.copc` par dalle
 
@@ -157,7 +157,7 @@ Ligne de commande :
 
 ```text
 python3 scripts/build_pdal_pipeline.py \
-  --tiles lidar_tiles.gpkg \
+  --tiles lidar_tile_index.gpkg \
   --layer lidar_tiles \
   --bbox xmin ymin xmax ymax \
   --output-pipeline pdal_pipeline.json \
@@ -166,9 +166,9 @@ python3 scripts/build_pdal_pipeline.py \
 
 Arguments :
 
-- `--tiles` : chemin vers le jeu de données local des emprises de dalles LiDAR, typiquement le `lidar_tiles.gpkg` généré
-- `--layer` : nom de la couche d'emprises de dalles LiDAR à lire dans `--tiles` (par ex. `lidar_tiles`)
-- `--bbox` : emprise d'extraction tamponnée en `EPSG:2154`, utilisée comme `bounds` PDAL sur chaque `readers.copc`
+- `--tiles` : chemin vers l'index local des dalles LiDAR, typiquement le `lidar_tile_index.gpkg` généré
+- `--layer` : nom de la couche d'index des dalles LiDAR à lire dans `--tiles` (par ex. `lidar_tiles`)
+- `--bbox` : emprise d'extraction LiDAR en `EPSG:2154`, utilisée comme `bounds` PDAL sur chaque `readers.copc`
 - `--output-pipeline` : chemin du `pdal_pipeline.json` généré
 - `--laz-output` : chemin du fichier LAZ découpé écrit par la chaîne de traitement PDAL générée
 
@@ -195,7 +195,7 @@ Ligne de commande :
 ```text
 bash scripts/set_building_attributes.sh \
   --input buildings.gpkg \
-  --output buildings_cleaned.gpkg \
+  --output buildings_prepared.gpkg \
   --layer buildings \
   --ground-min-field altitude_minimale_sol \
   --ground-max-field altitude_maximale_sol \

@@ -17,19 +17,19 @@ CHUNKED_PATH_PREFIX = "/chunk/telechargement"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Build a PDAL pipeline from a local LiDAR tile footprint dataset by reading "
+            "Build a PDAL pipeline from a local LiDAR tile index by reading "
             "COPC URLs from the schema-defined 'url' property."
         )
     )
     parser.add_argument(
         "--tiles",
         required=True,
-        help="Path to the local LiDAR tile footprint dataset, typically the generated GeoPackage.",
+        help="Path to the local LiDAR tile index, typically the generated GeoPackage.",
     )
     parser.add_argument(
         "--layer",
         required=True,
-        help="Name of the LiDAR tile footprint layer to read from the dataset.",
+        help="Name of the LiDAR tile index layer to read from the dataset.",
     )
     parser.add_argument(
         "--bbox",
@@ -200,7 +200,7 @@ def main() -> int:
     features = extract_features(data)
     if not features:
         raise RuntimeError(
-            f"no LiDAR tile features found in layer '{args.layer}'")
+            f"no LiDAR tile index features found in layer '{args.layer}'")
 
     urls = collect_copc_urls(features)
     bounds = build_bounds_string(args.bbox)

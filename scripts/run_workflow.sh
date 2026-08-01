@@ -10,12 +10,12 @@ export PATH="/opt/3dbag-pipeline/tools/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-MAX_BUFFER="500"
-WFS_URL="WFS:https://data.geopf.fr/wfs?SERVICE=WFS&VERSION=2.0.0&SRSNAME=EPSG:2154"
-BUILDINGS_SOURCE_LAYER="BDTOPO_V3:batiment"
-BUILDINGS_LAYER_NAME="buildings"
-LIDAR_SOURCE_LAYER="IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle"
-LIDAR_LAYER_NAME="lidar_tiles"
+MAX_LIDAR_EXTRACTION_BUFFER_METERS="500"
+GEOPLATEFORME_WFS_DSN="WFS:https://data.geopf.fr/wfs?SERVICE=WFS&VERSION=2.0.0&SRSNAME=EPSG:2154"
+BUILDINGS_WFS_LAYER="BDTOPO_V3:batiment"
+BUILDINGS_LOCAL_LAYER="buildings"
+LIDAR_TILE_INDEX_WFS_LAYER="IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle"
+LIDAR_TILE_INDEX_LOCAL_LAYER="lidar_tiles"
 
 # -----------------------------------------------------------------------------
 # Help and utility functions
@@ -66,7 +66,7 @@ validate_bbox() {
     || die "--bbox must satisfy xmin < xmax and ymin < ymax"
 }
 
-detect_default_jobs() {
+detect_default_roofer_jobs() {
   nproc
 }
 
@@ -161,10 +161,12 @@ configure_proxy_env() {
 # -----------------------------------------------------------------------------
 
 init_defaults() {
-  BBOX=()
-  BUFFER="10"
-  OUT_DIR=""
-  JOBS="$(detect_default_jobs)"
+  BUILDINGS_QUERY_BBOX=()
+  BUILDINGS_EXTENT=()
+  LIDAR_EXTRACTION_BBOX=()
+  LIDAR_EXTRACTION_BUFFER_METERS="10"
+  OUTPUT_DIR=""
+  ROOFER_JOBS="$(detect_default_roofer_jobs)"
 }
 
 parse_args() {
@@ -173,25 +175,25 @@ parse_args() {
       --bbox)
         shift
         [[ $# -ge 4 ]] || die "--bbox requires four values"
-        BBOX=("$1" "$2" "$3" "$4")
+        BUILDINGS_QUERY_BBOX=("$1" "$2" "$3" "$4")
         shift 4
         ;;
       --buffer)
         shift
         [[ $# -ge 1 ]] || die "--buffer requires a value"
-        BUFFER="$1"
+        LIDAR_EXTRACTION_BUFFER_METERS="$1"
         shift
         ;;
       --out)
         shift
         [[ $# -ge 1 ]] || die "--out requires a path"
-        OUT_DIR="$1"
+        OUTPUT_DIR="$1"
         shift
         ;;
       --jobs)
         shift
         [[ $# -ge 1 ]] || die "--jobs requires a value"
-        JOBS="$1"
+        ROOFER_JOBS="$1"
         shift
         ;;
       --help|-h)
@@ -208,144 +210,157 @@ parse_args() {
 validate_args() {
   local value=""
 
-  [[ ${#BBOX[@]} -eq 4 ]] || die "--bbox is required"
-  [[ -n "$OUT_DIR" ]] || die "--out is required"
+  [[ ${#BUILDINGS_QUERY_BBOX[@]} -eq 4 ]] || die "--bbox is required"
 
-  for value in "${BBOX[@]}" "$BUFFER"; do
+  [[ -n "$OUTPUT_DIR" ]] || die "--out is required"
+
+  for value in "${BUILDINGS_QUERY_BBOX[@]}" "$LIDAR_EXTRACTION_BUFFER_METERS"; do
     is_number "$value" || die "non-numeric value detected: $value"
   done
 
-  is_non_negative_number "$BUFFER" || die "--buffer must be greater than or equal to 0"
-  awk -v b="$BUFFER" -v m="$MAX_BUFFER" 'BEGIN { exit !(b <= m) }' \
-    || die "--buffer must not exceed $MAX_BUFFER meters"
+  is_non_negative_number "$LIDAR_EXTRACTION_BUFFER_METERS" \
+    || die "--buffer must be greater than or equal to 0"
 
-  [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || die "--jobs must be an integer > 0"
-  validate_bbox "${BBOX[0]}" "${BBOX[1]}" "${BBOX[2]}" "${BBOX[3]}"
+  awk \
+    -v b="$LIDAR_EXTRACTION_BUFFER_METERS" \
+    -v m="$MAX_LIDAR_EXTRACTION_BUFFER_METERS" \
+    'BEGIN { exit !(b <= m) }' \
+    || die "--buffer must not exceed $MAX_LIDAR_EXTRACTION_BUFFER_METERS meters"
+
+  [[ "$ROOFER_JOBS" =~ ^[1-9][0-9]*$ ]] || die "--jobs must be an integer > 0"
+
+  validate_bbox "${BUILDINGS_QUERY_BBOX[@]}"
 }
 
-setup_environment() {
+configure_runtime_environment() {
   configure_proxy_env
   check_required_commands
 
   export OGR_WFS_PAGING_ALLOWED=ON
-  export OGR_WFS_PAGE_SIZE=4500
-
-  mkdir -p "$OUT_DIR"
-
-  BUILDINGS_GPKG="$OUT_DIR/buildings.gpkg"
-  BUILDING_BBOX_JSON="$OUT_DIR/building_bbox.json"
-  BUFFERED_BBOX_JSON="$OUT_DIR/buffered_bbox.json"
-  LIDAR_TILES_GPKG="$OUT_DIR/lidar_tiles.gpkg"
-  PDAL_PIPELINE_JSON="$OUT_DIR/pdal_pipeline.json"
-  LIDAR_SUBSET_LAZ="$OUT_DIR/lidar_subset.laz"
-  ROOFER_OUTPUT_DIR="$OUT_DIR/roofer_output"
-  POSTPROCESS_GPKG="$OUT_DIR/buildings_cleaned.gpkg"
-
-  INPUT_XMIN="${BBOX[0]}"
-  INPUT_YMIN="${BBOX[1]}"
-  INPUT_XMAX="${BBOX[2]}"
-  INPUT_YMAX="${BBOX[3]}"
+  export OGR_WFS_PAGE_SIZE=5000
 }
 
-download_buildings() {
-  log "Downloading buildings from $BUILDINGS_SOURCE_LAYER"
-  rm -f "$BUILDINGS_GPKG"
-  ogr2ogr \
-    -f GPKG \
-    "$BUILDINGS_GPKG" \
-    "$WFS_URL" \
-    "$BUILDINGS_SOURCE_LAYER" \
-    -spat "$INPUT_XMIN" "$INPUT_YMIN" "$INPUT_XMAX" "$INPUT_YMAX" \
-    -spat_srs EPSG:2154 \
-    -t_srs EPSG:2154 \
-    -dim 2 \
-    -nlt MULTIPOLYGON \
-    -nln "$BUILDINGS_LAYER_NAME"
+initialize_output_paths() {
+  mkdir -p "$OUTPUT_DIR"
 
-  BUILDING_COUNT="$(extract_feature_count "$BUILDINGS_GPKG" "$BUILDINGS_LAYER_NAME")"
-  [[ -n "$BUILDING_COUNT" ]] || die "could not determine building feature count"
-  [[ "$BUILDING_COUNT" != "0" ]] || die "building query returned no features"
-}
-
-prepare_extents() {
-  read -r BUILDING_XMIN BUILDING_YMIN BUILDING_XMAX BUILDING_YMAX <<<"$(extract_extent "$BUILDINGS_GPKG" "$BUILDINGS_LAYER_NAME")"
-  write_bbox_json "$BUILDING_BBOX_JSON" "$BUILDING_XMIN" "$BUILDING_YMIN" "$BUILDING_XMAX" "$BUILDING_YMAX"
-
-  read -r BUFFERED_XMIN BUFFERED_YMIN BUFFERED_XMAX BUFFERED_YMAX <<<"$(
-    awk \
-      -v xmin="$BUILDING_XMIN" \
-      -v ymin="$BUILDING_YMIN" \
-      -v xmax="$BUILDING_XMAX" \
-      -v ymax="$BUILDING_YMAX" \
-      -v buffer="$BUFFER" \
-      'BEGIN {
-        printf "%.6f %.6f %.6f %.6f\n", xmin - buffer, ymin - buffer, xmax + buffer, ymax + buffer
-      }'
-  )"
-  write_bbox_json "$BUFFERED_BBOX_JSON" "$BUFFERED_XMIN" "$BUFFERED_YMIN" "$BUFFERED_XMAX" "$BUFFERED_YMAX"
-}
-
-download_lidar() {
-  log "Downloading LiDAR tile footprints from $LIDAR_SOURCE_LAYER"
-  rm -f "$LIDAR_TILES_GPKG"
-  ogr2ogr \
-    -f GPKG \
-    "$LIDAR_TILES_GPKG" \
-    "$WFS_URL" \
-    "$LIDAR_SOURCE_LAYER" \
-    -spat "$BUFFERED_XMIN" "$BUFFERED_YMIN" "$BUFFERED_XMAX" "$BUFFERED_YMAX" \
-    -spat_srs EPSG:2154 \
-    -t_srs EPSG:2154 \
-    -nln "$LIDAR_LAYER_NAME"
-
-  LIDAR_COUNT="$(extract_feature_count "$LIDAR_TILES_GPKG" "$LIDAR_LAYER_NAME")"
-  [[ -n "$LIDAR_COUNT" ]] || die "could not determine LiDAR tile feature count"
-  [[ "$LIDAR_COUNT" != "0" ]] || die "LiDAR tile query returned no features"
-}
-
-build_pdal_pipeline() {
-  log "Resolving COPC URLs and writing PDAL pipeline"
-  python3 "$SCRIPT_DIR/build_pdal_pipeline.py" \
-    --tiles "$LIDAR_TILES_GPKG" \
-    --layer "$LIDAR_LAYER_NAME" \
-    --bbox "$BUFFERED_XMIN" "$BUFFERED_YMIN" "$BUFFERED_XMAX" "$BUFFERED_YMAX" \
-    --output-pipeline "$PDAL_PIPELINE_JSON" \
-    --laz-output "$LIDAR_SUBSET_LAZ"
+  BUILDINGS_GPKG="$OUTPUT_DIR/buildings.gpkg"
+  BUILDINGS_EXTENT_JSON="$OUTPUT_DIR/buildings_extent.json"
+  LIDAR_EXTRACTION_BBOX_JSON="$OUTPUT_DIR/lidar_extraction_bbox.json"
+  LIDAR_TILE_INDEX_GPKG="$OUTPUT_DIR/lidar_tile_index.gpkg"
+  PDAL_PIPELINE_JSON="$OUTPUT_DIR/pdal_pipeline.json"
+  LIDAR_SUBSET_LAZ="$OUTPUT_DIR/lidar_subset.laz"
+  ROOFER_OUTPUT_DIR="$OUTPUT_DIR/roofer_output"
+  PREPARED_BUILDINGS_GPKG="$OUTPUT_DIR/buildings_prepared.gpkg"
 
   mkdir -p "$ROOFER_OUTPUT_DIR"
 }
 
-run_pdal_pipeline() {
-  log "Running PDAL pipeline"
+download_building_footprints() {
+  log "Downloading building footprints from $BUILDINGS_WFS_LAYER"
+  rm -f "$BUILDINGS_GPKG"
+  ogr2ogr \
+    -f GPKG \
+    "$BUILDINGS_GPKG" \
+    "$GEOPLATEFORME_WFS_DSN" \
+    "$BUILDINGS_WFS_LAYER" \
+    -spat "${BUILDINGS_QUERY_BBOX[@]}" \
+    -spat_srs EPSG:2154 \
+    -t_srs EPSG:2154 \
+    -dim 2 \
+    -nlt MULTIPOLYGON \
+    -nln "$BUILDINGS_LOCAL_LAYER"
+
+  BUILDING_FOOTPRINT_COUNT="$(extract_feature_count "$BUILDINGS_GPKG" "$BUILDINGS_LOCAL_LAYER")"
+  [[ -n "$BUILDING_FOOTPRINT_COUNT" ]] || die "could not determine building feature count"
+  [[ "$BUILDING_FOOTPRINT_COUNT" != "0" ]] || die "building query returned no features"
+}
+
+prepare_lidar_extraction_bbox() {
+
+  read -r -a BUILDINGS_EXTENT \
+    <<<"$(extract_extent "$BUILDINGS_GPKG" "$BUILDINGS_LOCAL_LAYER")"
+
+  [[ ${#BUILDINGS_EXTENT[@]} -eq 4 ]] || die "could not determine building extent"
+
+  write_bbox_json "$BUILDINGS_EXTENT_JSON" "${BUILDINGS_EXTENT[@]}"
+
+  read -r -a LIDAR_EXTRACTION_BBOX <<<"$(
+    awk \
+      -v xmin="${BUILDINGS_EXTENT[0]}" \
+      -v ymin="${BUILDINGS_EXTENT[1]}" \
+      -v xmax="${BUILDINGS_EXTENT[2]}" \
+      -v ymax="${BUILDINGS_EXTENT[3]}" \
+      -v buffer="$LIDAR_EXTRACTION_BUFFER_METERS" \
+      'BEGIN {
+        printf "%.6f %.6f %.6f %.6f\n", xmin - buffer, ymin - buffer, xmax + buffer, ymax + buffer
+      }'
+  )"
+
+  [[ ${#LIDAR_EXTRACTION_BBOX[@]} -eq 4 ]] || die "could not determine LiDAR extraction bbox"
+
+  write_bbox_json "$LIDAR_EXTRACTION_BBOX_JSON" "${LIDAR_EXTRACTION_BBOX[@]}"
+}
+
+download_lidar_tile_index() {
+  log "Downloading LiDAR tile index from $LIDAR_TILE_INDEX_WFS_LAYER"
+  rm -f "$LIDAR_TILE_INDEX_GPKG"
+  ogr2ogr \
+    -f GPKG \
+    "$LIDAR_TILE_INDEX_GPKG" \
+    "$GEOPLATEFORME_WFS_DSN" \
+    "$LIDAR_TILE_INDEX_WFS_LAYER" \
+    -spat "${LIDAR_EXTRACTION_BBOX[@]}" \
+    -spat_srs EPSG:2154 \
+    -t_srs EPSG:2154 \
+    -select url,id,name \
+    -nln "$LIDAR_TILE_INDEX_LOCAL_LAYER"
+
+  LIDAR_TILE_COUNT="$(extract_feature_count "$LIDAR_TILE_INDEX_GPKG" "$LIDAR_TILE_INDEX_LOCAL_LAYER")"
+  [[ -n "$LIDAR_TILE_COUNT" ]] || die "could not determine LiDAR tile feature count"
+  [[ "$LIDAR_TILE_COUNT" != "0" ]] || die "LiDAR tile query returned no feature"
+}
+
+generate_lidar_subset_pipeline() {
+  log "Resolving COPC URLs and generating LiDAR subset pipeline"
+  python3 "$SCRIPT_DIR/build_pdal_pipeline.py" \
+    --tiles "$LIDAR_TILE_INDEX_GPKG" \
+    --layer "$LIDAR_TILE_INDEX_LOCAL_LAYER" \
+    --bbox "${LIDAR_EXTRACTION_BBOX[@]}" \
+    --output-pipeline "$PDAL_PIPELINE_JSON" \
+    --laz-output "$LIDAR_SUBSET_LAZ"
+}
+
+extract_lidar_subset() {
+  log "Extracting LiDAR subset with PDAL"
   pdal pipeline "$PDAL_PIPELINE_JSON"
 }
 
-complete_attributes() {
-  log "Attribute completion"
+prepare_buildings_for_roofer() {
+  log "Preparing building footprints for roofer"
   bash "$SCRIPT_DIR/set_building_attributes.sh" \
     --input "$BUILDINGS_GPKG" \
-    --output "$POSTPROCESS_GPKG" \
-    --layer "$BUILDINGS_LAYER_NAME" \
+    --output "$PREPARED_BUILDINGS_GPKG" \
+    --layer "$BUILDINGS_LOCAL_LAYER" \
     --ground-min-field altitude_minimale_sol \
     --ground-max-field altitude_maximale_sol \
     --roof-min-field altitude_minimale_toit \
     --roof-max-field altitude_maximale_toit \
     --height-field hauteur \
-    --verbose 1
+    --verbose 0
 }
 
 run_roofer() {
   log "Running roofer"
   roofer \
-    -j "$JOBS" \
-    --polygon-source-layer "$BUILDINGS_LAYER_NAME" \
+    -j "$ROOFER_JOBS" \
+    --polygon-source-layer "$BUILDINGS_LOCAL_LAYER" \
     --srs EPSG:2154 \
     --h-terrain-strategy buffer_user \
     --h-terrain-attribute altitude_minimale_sol \
     --h-roof-attribute altitude_maximale_toit \
     --id-attribute cleabs \
     "$LIDAR_SUBSET_LAZ" \
-    "$POSTPROCESS_GPKG" \
+    "$PREPARED_BUILDINGS_GPKG" \
     "$ROOFER_OUTPUT_DIR"
 }
 
@@ -357,14 +372,15 @@ main() {
   init_defaults
   parse_args "$@"
   validate_args
-  setup_environment
+  configure_runtime_environment
+  initialize_output_paths
 
-  download_buildings
-  prepare_extents
-  download_lidar
-  build_pdal_pipeline
-  run_pdal_pipeline
-  complete_attributes
+  download_building_footprints
+  prepare_lidar_extraction_bbox
+  download_lidar_tile_index
+  generate_lidar_subset_pipeline
+  extract_lidar_subset
+  prepare_buildings_for_roofer
   run_roofer
 
   log "Workflow completed"
