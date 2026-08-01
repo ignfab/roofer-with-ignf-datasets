@@ -24,13 +24,14 @@ LIDAR_TILE_INDEX_LOCAL_LAYER="lidar_tiles"
 usage() {
   cat <<'EOF'
 Usage:
-  run_workflow.sh --bbox xmin ymin xmax ymax --out path [--buffer meters] [--jobs n]
+  run_workflow.sh --bbox xmin ymin xmax ymax --out path [--buffer meters] [--jobs n] [--verbose]
 
 Options:
   --bbox    Required input bounding box in EPSG:2154
   --buffer  Optional buffer in meters, 0 to 500, default: 10
   --out     Required output directory
   --jobs    Optional roofer job count, default: nproc
+  --verbose Enable additional diagnostic output
 EOF
 }
 
@@ -185,9 +186,15 @@ init_defaults() {
   BUILDINGS_EXTENT=()
   LIDAR_EXTRACTION_BBOX=()
   STEP_TIMINGS=()
+  PIPELINE_VERBOSE_ARGS=()
+  PDAL_VERBOSE_ARGS=()
+  ROOFER_VERBOSE_ARGS=()
+  CJIO_MESSAGE_ARGS=(--suppress_msg)
   LIDAR_EXTRACTION_BUFFER_METERS="10"
   OUTPUT_DIR=""
   ROOFER_JOBS="$(detect_default_roofer_jobs)"
+  BUILDING_ATTRIBUTES_VERBOSITY=0
+  VERBOSE=0
 }
 
 parse_args() {
@@ -215,6 +222,10 @@ parse_args() {
         shift
         [[ $# -ge 1 ]] || die "--jobs requires a value"
         ROOFER_JOBS="$1"
+        shift
+        ;;
+      --verbose)
+        VERBOSE=1
         shift
         ;;
       --help|-h)
@@ -251,6 +262,17 @@ validate_args() {
   [[ "$ROOFER_JOBS" =~ ^[1-9][0-9]*$ ]] || die "--jobs must be an integer > 0"
 
   validate_bbox "${BUILDINGS_QUERY_BBOX[@]}"
+}
+
+configure_command_verbosity() {
+  (( VERBOSE )) || return 0
+
+  PIPELINE_VERBOSE_ARGS=(--verbose)
+  PDAL_VERBOSE_ARGS=(--verbose 4)
+  ROOFER_VERBOSE_ARGS=(--loglevel debug)
+  CJIO_MESSAGE_ARGS=()
+  BUILDING_ATTRIBUTES_VERBOSITY=1
+  log "Verbose mode enabled"
 }
 
 configure_runtime_environment() {
@@ -345,7 +367,7 @@ download_lidar_tile_index() {
 
 generate_lidar_subset_pipeline() {
   log "Resolving COPC URLs and generating LiDAR subset pipeline"
-  python3 "$SCRIPT_DIR/build_pdal_pipeline.py" \
+  python3 "$SCRIPT_DIR/build_pdal_pipeline.py" "${PIPELINE_VERBOSE_ARGS[@]}" \
     --tiles "$LIDAR_TILE_INDEX_GPKG" \
     --layer "$LIDAR_TILE_INDEX_LOCAL_LAYER" \
     --bbox "${LIDAR_EXTRACTION_BBOX[@]}" \
@@ -355,7 +377,7 @@ generate_lidar_subset_pipeline() {
 
 extract_lidar_subset() {
   log "Extracting LiDAR subset with PDAL"
-  pdal pipeline "$PDAL_PIPELINE_JSON"
+  pdal "${PDAL_VERBOSE_ARGS[@]}" pipeline "$PDAL_PIPELINE_JSON"
 }
 
 prepare_buildings_for_roofer() {
@@ -369,12 +391,12 @@ prepare_buildings_for_roofer() {
     --roof-min-field altitude_minimale_toit \
     --roof-max-field altitude_maximale_toit \
     --height-field hauteur \
-    --verbose 0
+    --verbose "$BUILDING_ATTRIBUTES_VERBOSITY"
 }
 
 run_roofer() {
   log "Running roofer"
-  roofer \
+  roofer "${ROOFER_VERBOSE_ARGS[@]}" \
     -j "$ROOFER_JOBS" \
     --polygon-source-layer "$BUILDINGS_LOCAL_LAYER" \
     --srs EPSG:2154 \
@@ -397,7 +419,7 @@ convert_to_cityjson() {
   for cityjsonseq_file in "$ROOFER_OUTPUT_DIR"/*.city.jsonl; do
     [[ -f "$cityjsonseq_file" ]] || continue
     cityjson_file="${cityjsonseq_file%.jsonl}.json"
-    cjio --suppress_msg stdin save "$cityjson_file" <"$cityjsonseq_file"
+    cjio "${CJIO_MESSAGE_ARGS[@]}" stdin save "$cityjson_file" <"$cityjsonseq_file"
     converted_file_found=1
   done
 
@@ -415,6 +437,7 @@ main() {
   init_defaults
   parse_args "$@"
   validate_args
+  configure_command_verbosity
   configure_runtime_environment
   initialize_output_paths
 
