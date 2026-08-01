@@ -6,8 +6,12 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
+from urllib.parse import urlsplit, urlunsplit
 
 COPC_URL_FIELD = "url"
+GEOPLATEFORME_HOST = "data.geopf.fr"
+DIRECT_PATH_PREFIX = "/telechargement"
+CHUNKED_PATH_PREFIX = "/chunk/telechargement"
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,9 +52,11 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_ogrinfo(dataset: str, layer: str) -> dict:
-    command = ["ogrinfo", "-ro", "-geom=NO", "-q", "-json", "-features", dataset, layer]
+    command = ["ogrinfo", "-ro", "-geom=NO", "-q",
+               "-json", "-features", dataset, layer]
     try:
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            command, capture_output=True, text=True, check=False)
     except OSError as exc:
         raise RuntimeError(f"failed to execute ogrinfo: {exc}") from exc
 
@@ -77,6 +83,28 @@ def ends_with_copc_laz(value: object) -> bool:
         isinstance(value, str)
         and value.lower().startswith(("http://", "https://"))
         and value.lower().endswith(".copc.laz")
+    )
+
+
+def to_chunked_url(url: str) -> str:
+    parts = urlsplit(url)
+
+    if parts.scheme not in {"http", "https"}:
+        return url
+
+    if parts.hostname != GEOPLATEFORME_HOST:
+        return url
+
+    is_direct_path = (
+        parts.path == DIRECT_PATH_PREFIX
+        or parts.path.startswith(DIRECT_PATH_PREFIX + "/")
+    )
+    if not is_direct_path:
+        return url
+
+    suffix = parts.path[len(DIRECT_PATH_PREFIX):]
+    return urlunsplit(
+        parts._replace(path=CHUNKED_PATH_PREFIX + suffix)
     )
 
 
@@ -107,9 +135,10 @@ def collect_copc_urls(features: List[Dict[str, Any]]) -> List[str]:
         if not ends_with_copc_laz(value):
             skipped_identifiers.append(identifier)
             continue
-        if value not in seen:
-            seen.add(value)
-            ordered_urls.append(value)
+        url = to_chunked_url(value)
+        if url not in seen:
+            seen.add(url)
+            ordered_urls.append(url)
 
     if skipped_identifiers:
         identifiers = ", ".join(skipped_identifiers)
@@ -170,16 +199,19 @@ def main() -> int:
     data = run_ogrinfo(args.tiles, args.layer)
     features = extract_features(data)
     if not features:
-        raise RuntimeError(f"no LiDAR tile features found in layer '{args.layer}'")
+        raise RuntimeError(
+            f"no LiDAR tile features found in layer '{args.layer}'")
 
     urls = collect_copc_urls(features)
     bounds = build_bounds_string(args.bbox)
     pipeline = build_pipeline(urls, bounds, args.laz_output)
 
     try:
-        Path(args.output_pipeline).write_text(json.dumps(pipeline, indent=2) + "\n", encoding="utf-8")
+        Path(args.output_pipeline).write_text(json.dumps(
+            pipeline, indent=2) + "\n", encoding="utf-8")
     except OSError as exc:
-        raise RuntimeError(f"failed to write pipeline file '{args.output_pipeline}': {exc}") from exc
+        raise RuntimeError(
+            f"failed to write pipeline file '{args.output_pipeline}': {exc}") from exc
 
     return 0
 
