@@ -127,7 +127,7 @@ Arguments :
 - `--bbox xmin ymin xmax ymax` requis, emprise d'entrée en `EPSG:2154`
 - `--buffer` optionnel, entre `0` et `500` mètres, par défaut `10` mètres
 - `--out` optionnel, par défaut `./output` ; c'est le répertoire racine de sortie qui contient les répertoires d'exécution
-- `--jobs` optionnel, transmis à `roofer -j`, par défaut `nproc - 1` avec un minimum de `1`
+- `--jobs` optionnel, transmis à `roofer -j`, par défaut `nproc`. Pour les valeurs supérieures à `1`, roofer réserve un job au traitement et utilise les autres pour le pool de reconstruction
 - `--clean` optionnel, vide les répertoires d'exécution marqués sous `--out`
 
 ### `scripts/run_workflow.sh`

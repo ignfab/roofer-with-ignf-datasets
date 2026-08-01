@@ -30,7 +30,7 @@ Options:
   --bbox    Required input bounding box in EPSG:2154
   --buffer  Optional buffer in meters, 0 to 500, default: 10
   --out     Required output directory
-  --jobs    Optional roofer thread count, default: nproc - 1 (min 1)
+  --jobs    Optional roofer job count, default: nproc
 EOF
 }
 
@@ -67,14 +67,7 @@ validate_bbox() {
 }
 
 detect_default_jobs() {
-  local cpu_count
-
-  cpu_count="$(nproc)"
-  if (( cpu_count > 1 )); then
-    echo $((cpu_count - 1))
-  else
-    echo 1
-  fi
+  nproc
 }
 
 check_required_commands() {

@@ -157,11 +157,7 @@ get_cpu_count() {
 detect_default_jobs() {
   local cpu_count
   cpu_count="$(get_cpu_count)"
-  if (( cpu_count > 1 )); then
-    echo $((cpu_count - 1))
-  else
-    echo 1
-  fi
+  echo "${cpu_count}"
 }
 
 generate_run_name() {
@@ -178,7 +174,7 @@ Options:
   --buffer  Optional buffer in meters, 0 to ${MAX_BUFFER}, default: ${DEFAULT_BUFFER}
   --out     Optional output root directory, default: ./output
             Each run writes to a timestamped subdirectory (${DEFAULT_RUN_PREFIX}-YYYYMMDD-HHMMSS)
-  --jobs    Optional roofer thread count, default: $(detect_default_jobs)
+  --jobs    Optional roofer job count, default: $(detect_default_jobs)
   --clean   Clear previous run directories under --out before running
   --help    Show this help message
 EOF

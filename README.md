@@ -127,7 +127,7 @@ Arguments:
 - `--bbox xmin ymin xmax ymax` required, input extent in `EPSG:2154`
 - `--buffer` optional, between `0` and `500` meters, defaults to `10` meters
 - `--out` optional, defaults to `./output`; this is the output root that contains run directories
-- `--jobs` optional, forwarded to `roofer -j`, defaults to `nproc - 1` with a minimum of `1`
+- `--jobs` optional, forwarded to `roofer -j`, defaults to `nproc`. For values greater than `1`, roofer reserves one job for the pipeline and uses the others for the reconstructor pool
 - `--clean` optional, clears marked run directories under `--out`
 
 ### `scripts/run_workflow.sh`
