@@ -144,6 +144,7 @@ Traitement côté conteneur qui :
 - extrait le sous-ensemble LiDAR avec `pdal pipeline`
 - prépare les emprises de bâtiments avec `set_building_attributes.sh` (nécessite `sqlite3`)
 - exécute `roofer`
+- affiche le temps de chaque étape et le temps total à la fin du traitement
 
 ### `scripts/build_pdal_pipeline.py`
 

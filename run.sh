@@ -6,7 +6,7 @@ set -euo pipefail
 # Configuration
 # -----------------------------------------------------------------------------
 
-IMAGE="${RUNNER_IMAGE:-3dgi/3dbag-pipeline-tools:2026.06.24}"
+IMAGE="${RUNNER_IMAGE:-3dgi/3dbag-pipeline-tools:2026.07.29}"
 DEFAULT_BUFFER="10"
 MAX_BUFFER="500"
 DEFAULT_OUTPUT="output"

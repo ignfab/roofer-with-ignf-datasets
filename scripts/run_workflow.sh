@@ -43,6 +43,26 @@ log() {
   echo "[workflow] $*"
 }
 
+run_timed_step() {
+  local step_name="$1"
+  local started_at="$SECONDS"
+  shift
+
+  "$@"
+  STEP_TIMINGS+=("$step_name: $((SECONDS - started_at))s")
+}
+
+print_timing_summary() {
+  local total_seconds="$1"
+  local timing=""
+
+  log "Step timings:"
+  for timing in "${STEP_TIMINGS[@]}"; do
+    log "  $timing"
+  done
+  log "  Total: ${total_seconds}s"
+}
+
 is_number() {
   [[ "$1" =~ ^-?[0-9]+([.][0-9]+)?$ ]]
 }
@@ -164,6 +184,7 @@ init_defaults() {
   BUILDINGS_QUERY_BBOX=()
   BUILDINGS_EXTENT=()
   LIDAR_EXTRACTION_BBOX=()
+  STEP_TIMINGS=()
   LIDAR_EXTRACTION_BUFFER_METERS="10"
   OUTPUT_DIR=""
   ROOFER_JOBS="$(detect_default_roofer_jobs)"
@@ -369,21 +390,25 @@ run_roofer() {
 # -----------------------------------------------------------------------------
 
 main() {
+  local workflow_started_at=""
+
   init_defaults
   parse_args "$@"
   validate_args
   configure_runtime_environment
   initialize_output_paths
 
-  download_building_footprints
-  prepare_lidar_extraction_bbox
-  download_lidar_tile_index
-  generate_lidar_subset_pipeline
-  extract_lidar_subset
-  prepare_buildings_for_roofer
-  run_roofer
+  workflow_started_at="$SECONDS"
+  run_timed_step "Download building footprints" download_building_footprints
+  run_timed_step "Prepare LiDAR extraction bbox" prepare_lidar_extraction_bbox
+  run_timed_step "Download LiDAR tile index" download_lidar_tile_index
+  run_timed_step "Generate LiDAR subset pipeline" generate_lidar_subset_pipeline
+  run_timed_step "Extract LiDAR subset" extract_lidar_subset
+  run_timed_step "Prepare buildings for roofer" prepare_buildings_for_roofer
+  run_timed_step "Run roofer" run_roofer
 
   log "Workflow completed"
+  print_timing_summary "$((SECONDS - workflow_started_at))"
 }
 
 main "$@"

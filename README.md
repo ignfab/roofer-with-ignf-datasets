@@ -144,6 +144,7 @@ Container-side workflow that:
 - extracts the LiDAR subset with `pdal pipeline`
 - prepares the building footprints with `set_building_attributes.sh` (requires `sqlite3`)
 - runs `roofer`
+- prints a per-step and total timing summary when the workflow completes
 
 ### `scripts/build_pdal_pipeline.py`
 
