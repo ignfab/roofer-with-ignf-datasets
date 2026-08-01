@@ -281,6 +281,7 @@ download_building_footprints() {
   rm -f "$BUILDINGS_GPKG"
   ogr2ogr \
     -f GPKG \
+    -nomd \
     "$BUILDINGS_GPKG" \
     "$GEOPLATEFORME_WFS_DSN" \
     "$BUILDINGS_WFS_LAYER" \
@@ -327,6 +328,7 @@ download_lidar_tile_index() {
   rm -f "$LIDAR_TILE_INDEX_GPKG"
   ogr2ogr \
     -f GPKG \
+    -nomd \
     "$LIDAR_TILE_INDEX_GPKG" \
     "$GEOPLATEFORME_WFS_DSN" \
     "$LIDAR_TILE_INDEX_WFS_LAYER" \
