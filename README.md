@@ -39,7 +39,7 @@ The goal is to keep the code and user setup as simple as possible. The host only
 - Network access to:
   - `https://data.geopf.fr`
   - the COPC storage URLs returned by the LiDAR tiles WFS
-  - Docker Hub to pull `3dgi/3dbag-pipeline-tools:2026.06.24`
+  - Docker Hub to pull `3dgi/3dbag-pipeline-tools:2026.07.29`
 
 ## Quick start
 

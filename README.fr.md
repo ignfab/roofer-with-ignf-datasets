@@ -39,7 +39,7 @@ L'objectif est de garder le code et la configuration utilisateur aussi simples q
 - Un accès réseau vers :
   - `https://data.geopf.fr`
   - les URL de stockage COPC renvoyées par le WFS des dalles LiDAR
-  - Docker Hub pour récupérer `3dgi/3dbag-pipeline-tools:2026.06.24`
+  - Docker Hub pour récupérer `3dgi/3dbag-pipeline-tools:2026.07.29`
 
 ## Démarrage rapide
 
