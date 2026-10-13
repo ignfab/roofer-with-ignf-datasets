@@ -5,6 +5,7 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 # Configuration
 # -----------------------------------------------------------------------------
+OUTPUT_ENTRIES=()
 
 IMAGE="${RUNNER_IMAGE:-3dgi/3dbag-pipeline-tools:2026.07.29}"
 DEFAULT_BUFFER="10"
@@ -99,6 +100,10 @@ output_dir_has_payload_entries() {
 
   collect_output_entries "${dir}"
 
+ if (( ${#OUTPUT_ENTRIES[@]} == 0 )); then
+      return 1
+  fi
+  
   for entry in "${OUTPUT_ENTRIES[@]}"; do
     [[ "${entry##*/}" == "${RUN_MARKER}" && -f "${entry}" ]] && continue
     return 0
