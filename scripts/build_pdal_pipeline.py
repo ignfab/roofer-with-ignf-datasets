@@ -8,7 +8,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlsplit, urlunsplit
 
-COPC_URL_FIELD = "url"
+COPC_URL_FIELD = "url_npl"
+TILE_IDENTIFIER_FIELD = "coordonnees_nw"
 GEOPLATEFORME_HOST = "data.geopf.fr"
 DIRECT_PATH_PREFIX = "/telechargement"
 CHUNKED_PATH_PREFIX = "/chunk/telechargement"
@@ -18,7 +19,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Build a PDAL pipeline from a local LiDAR tile index by reading "
-            "COPC URLs from the schema-defined 'url' property."
+            "COPC URLs from the 'url_npl' property."
         )
     )
     parser.add_argument(
@@ -56,12 +57,24 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def run_ogrinfo(dataset: str, layer: str) -> dict:
-    command = ["ogrinfo", "-ro", "-geom=NO", "-q",
-               "-json", "-features", dataset, layer]
+def run_ogrinfo(dataset: str, layer: str) -> Dict[str, Any]:
+    command = [
+        "ogrinfo",
+        "-ro",
+        "-geom=NO",
+        "-q",
+        "-json",
+        "-features",
+        dataset,
+        layer,
+    ]
     try:
         result = subprocess.run(
-            command, capture_output=True, text=True, check=False)
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     except OSError as exc:
         raise RuntimeError(f"failed to execute ogrinfo: {exc}") from exc
 
@@ -76,7 +89,11 @@ def run_ogrinfo(dataset: str, layer: str) -> dict:
 
 def extract_features(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     layers = data.get("layers")
-    if not (isinstance(layers, list) and layers and isinstance(layers[0], dict)):
+    if not (
+        isinstance(layers, list)
+        and layers
+        and isinstance(layers[0], dict)
+    ):
         return []
 
     features = layers[0].get("features")
@@ -84,11 +101,14 @@ def extract_features(data: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def ends_with_copc_laz(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and value.lower().startswith(("http://", "https://"))
-        and value.lower().endswith(".copc.laz")
-    )
+    if not isinstance(value, str):
+        return False
+
+    value = value.strip()
+    if not value.lower().startswith(("http://", "https://")):
+        return False
+
+    return urlsplit(value).path.lower().endswith(".copc.laz")
 
 
 def to_chunked_url(url: str) -> str:
@@ -114,20 +134,17 @@ def to_chunked_url(url: str) -> str:
 
 
 def format_tile_identifier(properties: Dict[str, Any]) -> str:
-    tile_id = properties.get("id")
-    tile_name = properties.get("name")
+    tile_name = properties.get(TILE_IDENTIFIER_FIELD)
 
-    if tile_id is not None and tile_name:
-        return f"id={tile_id}, name={tile_name}"
-    if tile_id is not None:
-        return f"id={tile_id}"
-    if tile_name:
-        return f"name={tile_name}"
+    if tile_name is not None and str(tile_name).strip():
+        return f"{TILE_IDENTIFIER_FIELD}={tile_name}"
+
     return "<unknown tile>"
 
 
 def collect_copc_urls(
-    features: List[Dict[str, Any]], verbose: bool = False
+    features: List[Dict[str, Any]],
+    verbose: bool = False,
 ) -> List[str]:
     ordered_urls: List[str] = []
     tile_identifiers: List[str] = []
@@ -139,13 +156,17 @@ def collect_copc_urls(
         properties = feature.get("properties") or {}
         identifier = format_tile_identifier(properties)
         tile_identifiers.append(identifier)
+
         value = properties.get(COPC_URL_FIELD)
+
         if not ends_with_copc_laz(value):
             skipped_identifiers.append(identifier)
             continue
-        url = to_chunked_url(value)
+
+        url = to_chunked_url(value.strip())
+
         if url not in seen:
-            if url != value:
+            if url != value.strip():
                 chunked_url_count += 1
             seen.add(url)
             ordered_urls.append(url)
@@ -153,17 +174,17 @@ def collect_copc_urls(
     if skipped_identifiers:
         identifiers = ", ".join(skipped_identifiers)
         print(
-            f"Warning: skipped {len(skipped_identifiers)} LiDAR tile(s) without a usable "
-            f"'{COPC_URL_FIELD}' COPC URL; LiDAR coverage may be incomplete. "
-            f"Tiles skipped: {identifiers}",
+            f"Warning: skipped {len(skipped_identifiers)} LiDAR tile(s) "
+            f"without a usable '{COPC_URL_FIELD}' COPC URL; "
+            f"LiDAR coverage may be incomplete. Tiles skipped: {identifiers}",
             file=sys.stderr,
         )
 
     if not ordered_urls:
         identifiers = ", ".join(tile_identifiers[:10])
         raise RuntimeError(
-            f"no COPC URLs collected from LiDAR tile '{COPC_URL_FIELD}' property; "
-            f"tiles seen: {identifiers}"
+            f"no COPC URLs collected from LiDAR tile "
+            f"'{COPC_URL_FIELD}' property; tiles seen: {identifiers}"
         )
 
     if verbose:
@@ -183,7 +204,11 @@ def build_bounds_string(bbox: List[str]) -> str:
     return f"([{xmin},{xmax}],[{ymin},{ymax}])"
 
 
-def build_pipeline(urls: List[str], bounds: str, laz_output: str) -> List[Dict[str, Any]]:
+def build_pipeline(
+    urls: List[str],
+    bounds: str,
+    laz_output: str,
+) -> List[Dict[str, Any]]:
     stages: List[Dict[str, Any]] = []
 
     for url in urls:
@@ -217,20 +242,25 @@ def main() -> int:
 
     data = run_ogrinfo(args.tiles, args.layer)
     features = extract_features(data)
+
     if not features:
         raise RuntimeError(
-            f"no LiDAR tile index features found in layer '{args.layer}'")
+            f"no LiDAR tile index features found in layer '{args.layer}'"
+        )
 
     urls = collect_copc_urls(features, verbose=args.verbose)
     bounds = build_bounds_string(args.bbox)
     pipeline = build_pipeline(urls, bounds, args.laz_output)
 
     try:
-        Path(args.output_pipeline).write_text(json.dumps(
-            pipeline, indent=2) + "\n", encoding="utf-8")
+        Path(args.output_pipeline).write_text(
+            json.dumps(pipeline, indent=2) + "\n",
+            encoding="utf-8",
+        )
     except OSError as exc:
         raise RuntimeError(
-            f"failed to write pipeline file '{args.output_pipeline}': {exc}") from exc
+            f"failed to write pipeline file '{args.output_pipeline}': {exc}"
+        ) from exc
 
     if args.verbose:
         print(f"PDAL bounds: {bounds}", file=sys.stderr)
@@ -249,3 +279,4 @@ if __name__ == "__main__":
     except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
+
