@@ -14,7 +14,7 @@ MAX_LIDAR_EXTRACTION_BUFFER_METERS="500"
 GEOPLATEFORME_WFS_DSN="WFS:https://data.geopf.fr/wfs?SERVICE=WFS&VERSION=2.0.0&SRSNAME=EPSG:2154"
 BUILDINGS_WFS_LAYER="BDTOPO_V3:batiment"
 BUILDINGS_LOCAL_LAYER="buildings"
-LIDAR_TILE_INDEX_WFS_LAYER="IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle"
+LIDAR_TILE_INDEX_WFS_LAYER="IGNF_LIDAR-HD_METADONNEE:metadata"
 LIDAR_TILE_INDEX_LOCAL_LAYER="lidar_tiles"
 
 # -----------------------------------------------------------------------------
@@ -345,9 +345,11 @@ prepare_lidar_extraction_bbox() {
   write_bbox_json "$LIDAR_EXTRACTION_BBOX_JSON" "${LIDAR_EXTRACTION_BBOX[@]}"
 }
 
+
 download_lidar_tile_index() {
   log "Downloading LiDAR tile index from $LIDAR_TILE_INDEX_WFS_LAYER"
   rm -f "$LIDAR_TILE_INDEX_GPKG"
+
   ogr2ogr \
     -f GPKG \
     -nomd \
@@ -357,13 +359,20 @@ download_lidar_tile_index() {
     -spat "${LIDAR_EXTRACTION_BBOX[@]}" \
     -spat_srs EPSG:2154 \
     -t_srs EPSG:2154 \
-    -select url,id,name \
+    -select url_npl,coordonnees_nw \
     -nln "$LIDAR_TILE_INDEX_LOCAL_LAYER"
 
-  LIDAR_TILE_COUNT="$(extract_feature_count "$LIDAR_TILE_INDEX_GPKG" "$LIDAR_TILE_INDEX_LOCAL_LAYER")"
-  [[ -n "$LIDAR_TILE_COUNT" ]] || die "could not determine LiDAR tile feature count"
-  [[ "$LIDAR_TILE_COUNT" != "0" ]] || die "LiDAR tile query returned no feature"
+  LIDAR_TILE_COUNT="$(extract_feature_count \
+    "$LIDAR_TILE_INDEX_GPKG" \
+    "$LIDAR_TILE_INDEX_LOCAL_LAYER")"
+
+  [[ -n "$LIDAR_TILE_COUNT" ]] ||
+    die "could not determine LiDAR tile feature count"
+
+  [[ "$LIDAR_TILE_COUNT" != "0" ]] ||
+    die "LiDAR tile query returned no feature"
 }
+
 
 generate_lidar_subset_pipeline() {
   log "Resolving COPC URLs and generating LiDAR subset pipeline"

@@ -12,7 +12,7 @@ The workflow of this project is:
 2. Download `BDTOPO_V3:batiment` buildings from the [IGN WFS](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) with pagination support
 3. Compute the real extent of the downloaded buildings
 4. Define the LiDAR extraction bbox by adding a configurable buffer around that extent
-5. Query the `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` tile index from the [IGN WFS](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) with pagination support
+5. Query the `IGNF_LIDAR-HD_METADONNEE:metadata` tile index from the [IGN WFS](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) with pagination support
 6. Build a PDAL pipeline that streams exactly the LiDAR covering the extraction bbox, cropped from the intersecting COPC tiles
 7. Remap LiDAR HD classification `67 -> 6`, because `roofer` follows the ASPRS LAS standard and only treats class `6` as *building*, whereas IGN LiDAR HD also places building points in its non-standard class `67` (*Divers - bâtis*, i.e. miscellaneous built structures). Without this remap those points would be invisible to `roofer` and lost for roof reconstruction
 8. Clean and complete the building ground and roof elevation attributes, which `roofer` falls back on when a footprint has too few ground points (for the floor elevation) or roof points (for the roof height)
@@ -96,7 +96,7 @@ Expected files inside each run directory:
 - `buildings.gpkg`: building footprints downloaded from `BDTOPO_V3:batiment` in `EPSG:2154` and normalized to `MULTIPOLYGON`
 - `buildings_extent.json`: the real building extent computed from the downloaded building layer
 - `lidar_extraction_bbox.json`: the buffered building extent used to query and crop the LiDAR data
-- `lidar_tile_index.gpkg`: the local LiDAR tile index containing the footprints, identifiers, names, and COPC URLs returned by `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
+- `lidar_tile_index.gpkg`: the local LiDAR tile index containing the tile footprints, north-west corner coordinates (`coordonnees_nw`), and COPC URLs (`url_npl`) returned by `IGNF_LIDAR-HD_METADONNEE:metadata`
 - `pdal_pipeline.json`: the generated PDAL pipeline
 - `lidar_subset.laz`: the cropped LiDAR subset written by PDAL for the LiDAR extraction bbox, with class `67` remapped to `6`
 - `buildings_prepared.gpkg`: building footprints after attribute cleaning and completion, used as the polygon source for `roofer`
@@ -141,8 +141,8 @@ Container-side workflow that:
 - downloads building footprints from `BDTOPO_V3:batiment`
 - computes the real building extent
 - prepares the LiDAR extraction bbox by buffering that extent
-- downloads the LiDAR tile index from `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
-- reads COPC URLs from the tile `url` attribute
+- downloads the LiDAR tile index from `IGNF_LIDAR-HD_METADONNEE:metadata`
+- reads COPC URLs from the tile `url_npl` attribute
 - generates `pdal_pipeline.json` to extract the required LiDAR subset
 - extracts the LiDAR subset with `pdal pipeline`
 - prepares the building footprints with `set_building_attributes.sh` (requires `sqlite3`)
@@ -156,7 +156,7 @@ Container-side workflow that:
 Small Python helper that:
 
 - reads the local LiDAR tile index with `ogrinfo -json`
-- reads COPC URLs from the schema-defined `url` property
+- reads COPC URLs from the `url_npl` property
 - generates a PDAL pipeline with one `readers.copc` per tile
 
 CLI:
@@ -244,6 +244,7 @@ Arguments:
 
 - IGN LiDAR HD product page: <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD>
 - IGN LiDAR HD content descriptor (classification nomenclature, incl. class `67`): <https://geoservices.ign.fr/sites/default/files/2024-09/DC_LiDAR_HD_1-0.pdf>
+- IGN LiDAR HD metadata descriptor (fields of the `IGNF_LIDAR-HD_METADONNEE:metadata` tile index, incl. `url_npl` and `coordonnees_nw`): <https://data.geopf.fr/annexes/ressources/documentation/Descriptif_MTD_LIDARHD.pdf>
 - IGN BDTOPO product page: <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO>
 - IGN BDTOPO content descriptor: <https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf>
 - IGN WFS service: <https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/>
