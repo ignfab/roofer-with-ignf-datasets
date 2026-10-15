@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+# Under set -u, bash < 4.4 (macOS ships 3.2) treats "${array[@]}" as unbound
+# when the array is empty: expand possibly-empty arrays as ${array[@]+"${array[@]}"}.
 
 # -----------------------------------------------------------------------------
 # Configuration
@@ -100,11 +102,7 @@ output_dir_has_payload_entries() {
 
   collect_output_entries "${dir}"
 
- if (( ${#OUTPUT_ENTRIES[@]} == 0 )); then
-      return 1
-  fi
-  
-  for entry in "${OUTPUT_ENTRIES[@]}"; do
+  for entry in ${OUTPUT_ENTRIES[@]+"${OUTPUT_ENTRIES[@]}"}; do
     [[ "${entry##*/}" == "${RUN_MARKER}" && -f "${entry}" ]] && continue
     return 0
   done
@@ -136,7 +134,7 @@ clean_marked_run_dirs() {
 
   collect_output_entries "${root}"
 
-  for entry in "${OUTPUT_ENTRIES[@]}"; do
+  for entry in ${OUTPUT_ENTRIES[@]+"${OUTPUT_ENTRIES[@]}"}; do
     if [[ -d "${entry}" ]] && output_dir_is_marked "${entry}"; then
       ensure_safe_output_dir "${entry}"
       rm -rf -- "${entry}"
@@ -267,7 +265,7 @@ validate_args() {
     die "--bbox is required"
   fi
 
-  for value in "${BBOX[@]}" "${BUFFER}"; do
+  for value in ${BBOX[@]+"${BBOX[@]}"} "${BUFFER}"; do
     is_number "${value}" || die "non-numeric value detected: ${value}"
   done
 
