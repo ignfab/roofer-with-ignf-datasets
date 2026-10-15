@@ -104,7 +104,6 @@ def ends_with_copc_laz(value: object) -> bool:
     if not isinstance(value, str):
         return False
 
-    value = value.strip()
     if not value.lower().startswith(("http://", "https://")):
         return False
 
@@ -158,15 +157,17 @@ def collect_copc_urls(
         tile_identifiers.append(identifier)
 
         value = properties.get(COPC_URL_FIELD)
+        if isinstance(value, str):
+            value = value.strip()
 
         if not ends_with_copc_laz(value):
             skipped_identifiers.append(identifier)
             continue
 
-        url = to_chunked_url(value.strip())
+        url = to_chunked_url(value)
 
         if url not in seen:
-            if url != value.strip():
+            if url != value:
                 chunked_url_count += 1
             seen.add(url)
             ordered_urls.append(url)
