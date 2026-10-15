@@ -12,7 +12,7 @@ Le déroulé de ce projet est le suivant :
 2. Télécharger les bâtiments `BDTOPO_V3:batiment` depuis le [WFS de l'IGN](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) avec prise en charge de la pagination
 3. Calculer l'étendue réelle des bâtiments téléchargés
 4. Définir l'emprise d'extraction LiDAR en ajoutant une zone tampon (*buffer*) configurable autour de cette étendue
-5. Interroger l'index des dalles `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle` depuis le [WFS de l'IGN](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) avec prise en charge de la pagination
+5. Interroger l'index des dalles `IGNF_LIDAR-HD_METADONNEE:metadata` depuis le [WFS de l'IGN](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/) avec prise en charge de la pagination
 6. Construire une chaîne de traitement (*pipeline*) PDAL qui diffuse exactement le LiDAR couvrant l'emprise d'extraction, découpé à partir des dalles COPC intersectées
 7. Remapper la classification LiDAR HD `67 -> 6`, car `roofer` suit le standard ASPRS LAS et ne considère que la classe `6` comme *bâtiment*, alors que le LiDAR HD de l'IGN place aussi des points de bâtiment dans sa classe non standard `67` (*Divers - bâtis*, c'est-à-dire les structures bâties diverses). Sans ce remappage, ces points seraient invisibles pour `roofer` et perdus pour la reconstruction des toits
 8. Nettoyer et compléter les attributs d'altitude du sol et du toit des bâtiments, sur lesquels `roofer` se rabat lorsqu'une emprise a trop peu de points sol (pour l'altitude du plancher) ou de points toit (pour la hauteur du toit)
@@ -96,7 +96,7 @@ Fichiers attendus dans chaque répertoire d'exécution :
 - `buildings.gpkg` : emprises de bâtiments téléchargées depuis `BDTOPO_V3:batiment` en `EPSG:2154` et normalisées en `MULTIPOLYGON`
 - `buildings_extent.json` : l'étendue réelle des bâtiments calculée à partir de la couche de bâtiments téléchargée
 - `lidar_extraction_bbox.json` : l'étendue avec buffer des bâtiments utilisée pour interroger et découper les données LiDAR
-- `lidar_tile_index.gpkg` : l'index local des dalles LiDAR contenant les emprises, les identifiants, les noms et les URL COPC renvoyées par `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
+- `lidar_tile_index.gpkg` : l'index local des dalles LiDAR contenant les emprises des dalles, les coordonnées de leur coin nord-ouest (`coordonnees_nw`) et les URL COPC (`url_npl`) renvoyées par `IGNF_LIDAR-HD_METADONNEE:metadata`
 - `pdal_pipeline.json` : la chaîne de traitement PDAL générée
 - `lidar_subset.laz` : le sous-ensemble LiDAR découpé écrit par PDAL pour l'emprise d'extraction LiDAR, avec la classe `67` remappée en `6`
 - `buildings_prepared.gpkg` : les emprises de bâtiments après nettoyage et complétion des attributs, utilisées comme source de polygones pour `roofer`
@@ -141,8 +141,8 @@ Traitement côté conteneur qui :
 - télécharge les bâtiments depuis `BDTOPO_V3:batiment`
 - calcule l'étendue réelle des bâtiments
 - prépare l'emprise d'extraction LiDAR en appliquant une zone tampon à cette étendue
-- télécharge l'index des dalles LiDAR depuis `IGNF_NUAGES-DE-POINTS-LIDAR-HD:dalle`
-- lit les URL COPC depuis l'attribut `url` des dalles
+- télécharge l'index des dalles LiDAR depuis `IGNF_LIDAR-HD_METADONNEE:metadata`
+- lit les URL COPC depuis l'attribut `url_npl` des dalles
 - génère `pdal_pipeline.json` pour extraire le sous-ensemble LiDAR nécessaire
 - extrait le sous-ensemble LiDAR avec `pdal pipeline`
 - prépare les emprises de bâtiments avec `set_building_attributes.sh` (nécessite `sqlite3`)
@@ -156,7 +156,7 @@ Traitement côté conteneur qui :
 Petit utilitaire Python qui :
 
 - lit l'index local des dalles LiDAR avec `ogrinfo -json`
-- lit les URL COPC depuis la propriété `url` définie dans le schéma
+- lit les URL COPC depuis la propriété `url_npl`
 - génère une chaîne de traitement (aussi appelée _pipeline_) PDAL avec un `readers.copc` par dalle
 
 Ligne de commande :
@@ -244,6 +244,7 @@ Arguments :
 
 - Page produit IGN LiDAR HD : <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_NUAGES-DE-POINTS-LIDAR-HD>
 - Descriptif de contenu IGN LiDAR HD (nomenclature de classification, incl. la classe `67`) : <https://geoservices.ign.fr/sites/default/files/2024-09/DC_LiDAR_HD_1-0.pdf>
+- Descriptif des métadonnées IGN LiDAR HD (champs de l'index des dalles `IGNF_LIDAR-HD_METADONNEE:metadata`, dont `url_npl` et `coordonnees_nw`) : <https://data.geopf.fr/annexes/ressources/documentation/Descriptif_MTD_LIDARHD.pdf>
 - Page produit IGN BDTOPO : <https://cartes.gouv.fr/rechercher-une-donnee/dataset/IGNF_BD-TOPO>
 - Descriptif de contenu IGN BDTOPO : <https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf>
 - Service WFS de l'IGN : <https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/diffusion/wfs/>
